@@ -1,0 +1,20 @@
+import AppKit
+let out = CommandLine.arguments[1]
+let image = NSImage(size: NSSize(width: 1024, height: 1024))
+image.lockFocus()
+let background = NSBezierPath(roundedRect: NSRect(x: 32, y: 32, width: 960, height: 960), xRadius: 220, yRadius: 220)
+NSGradient(starting: NSColor(calibratedRed: 0.12, green: 0.20, blue: 0.24, alpha: 1), ending: NSColor(calibratedRed: 0.035, green: 0.07, blue: 0.10, alpha: 1))!.draw(in: background, angle: -60)
+let accent = NSColor(calibratedRed: 0.40, green: 0.88, blue: 0.73, alpha: 1)
+NSColor.white.withAlphaComponent(0.8).setStroke()
+let monitor = NSBezierPath(roundedRect: NSRect(x: 195, y: 310, width: 595, height: 410), xRadius: 42, yRadius: 42)
+monitor.lineWidth = 27; monitor.stroke()
+let stand = NSBezierPath(); stand.move(to: NSPoint(x: 490, y: 305)); stand.line(to: NSPoint(x: 490, y: 220)); stand.move(to: NSPoint(x: 370, y: 217)); stand.line(to: NSPoint(x: 610, y: 217)); stand.lineWidth = 28; stand.lineCapStyle = .round; stand.stroke()
+NSColor(calibratedRed: 0.06, green: 0.14, blue: 0.16, alpha: 1).setFill()
+let phone = NSBezierPath(roundedRect: NSRect(x: 578, y: 213, width: 236, height: 420), xRadius: 42, yRadius: 42)
+phone.fill(); accent.setStroke(); phone.lineWidth = 26; phone.stroke()
+let notch = NSBezierPath(); notch.move(to: NSPoint(x: 660, y: 593)); notch.line(to: NSPoint(x: 732, y: 593)); notch.lineWidth = 12; notch.lineCapStyle = .round; notch.stroke()
+accent.setFill()
+let play = NSBezierPath(); play.move(to: NSPoint(x: 365, y: 448)); play.line(to: NSPoint(x: 365, y: 583)); play.line(to: NSPoint(x: 470, y: 516)); play.close(); play.fill()
+image.unlockFocus()
+let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
+try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: out))

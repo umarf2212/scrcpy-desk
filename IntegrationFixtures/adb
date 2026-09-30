@@ -1,0 +1,6 @@
+#!/bin/sh
+case "$1" in
+ devices) printf 'List of devices attached\nTEST_SERIAL device model:Test_Phone\nLOCKED unauthorized\n';;
+ connect) printf 'connected to %s\n' "$2";;
+ *) printf 'Unexpected operation\n'; exit 1;;
+esac

@@ -1,0 +1,11 @@
+#!/bin/sh
+trap 'echo Session-stopped; exit 0' INT TERM
+for arg in "$@"; do
+ printf 'ARG:%s\n' "$arg"
+ case "$arg" in
+  --record=*) printf 'test-recording' > "${arg#--record=}";;
+ esac
+done
+case "$*" in *--print-fps*) while true; do sleep 0.1; done;; esac
+printf 'Normal-completion\n'
+exit 0
