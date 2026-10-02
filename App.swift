@@ -16,7 +16,7 @@ struct ScrcpyDeskApp: App {
                 .preferredColorScheme(.dark)
                 .onAppear { if delegate.model == nil { delegate.model = model; model.begin() }; NSApp.activate(ignoringOtherApps: true) }
         }
-        .defaultSize(width: 1050, height: 790)
+        .defaultSize(width: 980, height: 760)
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -37,312 +37,381 @@ struct DeskView: View {
     @ObservedObject var model: DeskModel
     @State private var tab = "Mirror"
     @State private var wireless = false
-    let tabs = ["Mirror", "Audio", "Control", "Advanced", "Activity", "Updates"]
+    let tabs = [("Mirror", "display"), ("Audio", "speaker.wave.2"), ("Control", "keyboard"), ("Advanced", "slider.horizontal.3"), ("Activity", "terminal"), ("Updates", "arrow.down.circle")]
+
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.frame(width: 236)
-            Rectangle().fill(Color.white.opacity(0.07)).frame(width: 1)
+            sidebar.frame(width: 184)
+            Divider()
             VStack(alignment: .leading, spacing: 0) {
-                header.padding(.horizontal, 30).padding(.top, 34).padding(.bottom, 24)
-                HStack(spacing: 22) {
-                    ForEach(tabs, id: \.self) { name in
-                        Button { tab = name } label: {
-                            VStack(spacing: 12) {
-                                Text(name).font(.system(size: 13, weight: tab == name ? .semibold : .regular)).foregroundStyle(tab == name ? mint : .secondary)
-                                Capsule().fill(tab == name ? mint : .clear).frame(height: 2)
-                            }.fixedSize(horizontal: true, vertical: false)
-                        }.buttonStyle(.plain)
-                    }
-                    Spacer()
-                }.padding(.horizontal, 30)
-                Divider().opacity(0.35)
+                header
+                deviceBar
+                Divider()
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        if tab == "Mirror" { mirrorPanel }
-                        if tab == "Audio" { audioPanel }
-                        if tab == "Control" { controlPanel }
-                        if tab == "Advanced" { advancedPanel }
-                        if tab == "Activity" { activityPanel }
-                        if tab == "Updates" { updatesPanel }
-                    }.padding(30).disabled(model.running && tab != "Activity")
-                }
+                    VStack(alignment: .leading, spacing: 0) {
+                        switch tab {
+                        case "Audio": audioPanel
+                        case "Control": controlPanel
+                        case "Advanced": advancedPanel
+                        case "Activity": activityPanel
+                        case "Updates": updatesPanel
+                        default: mirrorPanel
+                        }
+                    }
+                    .frame(maxWidth: 840, alignment: .leading)
+                    .padding(28)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .disabled(model.running && tab != "Activity")
+                }.id(tab)
                 footer
             }
         }
         .background(canvas)
-        .frame(minWidth: 940, minHeight: 720)
+        .frame(minWidth: 840, minHeight: 640)
         .tint(mint)
         .onChange(of: model.showUpdates) { value in if value { tab = "Updates"; model.showUpdates = false } }
         .sheet(isPresented: $wireless) { WirelessView(model: model) }
-        .alert("Something needs attention", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+        .alert("Unable to complete action", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("View Activity") { tab = "Activity"; model.error = nil }
             Button("Dismiss", role: .cancel) { model.error = nil }
         } message: { Text(model.error ?? "") }
     }
+
     var sidebar: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            HStack(spacing: 10) {
-                Image(systemName: "rectangle.on.rectangle").font(.system(size: 24, weight: .medium)).foregroundStyle(mint)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("scrcpy desk").font(.system(size: 18, weight: .semibold))
-                    Text("ANDROID, ON YOUR MAC").font(.system(size: 8, weight: .bold)).tracking(1.6).foregroundStyle(.secondary)
-                }
-            }.padding(.top, 38).padding(.bottom, 16)
-            HStack {
-                Text("DEVICES").font(.system(size: 10, weight: .bold)).tracking(1.5).foregroundStyle(.secondary)
-                Spacer()
-                Button { model.refresh() } label: { Image(systemName: "arrow.clockwise").rotationEffect(.degrees(model.scanning ? 180 : 0)) }.buttonStyle(.plain).help("Refresh devices").disabled(model.scanning)
-            }
-            if model.devices.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    Image(systemName: "cable.connector").font(.system(size: 29)).foregroundStyle(.secondary)
-                    Text("Waiting for a device").font(.system(size: 13, weight: .medium))
-                    Text(model.wirelessServices.isEmpty ? "Connect with USB, or pair your phone over Wi-Fi." : "Nearby Wi-Fi device found. Open Connect over Wi-Fi to pair.").font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
-                }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
-            } else {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(model.devices) { device in
-                            Button { model.selected = device.id } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: device.wireless ? "wifi" : "iphone").font(.system(size: 19)).foregroundStyle(device.ready ? mint : .orange)
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(device.name).font(.system(size: 12, weight: .semibold)).lineLimit(2)
-                                        Text(device.ready ? (device.wireless ? "Wi-Fi · Ready" : "USB · Ready") : device.state.capitalized).font(.system(size: 10)).foregroundStyle(.secondary)
-                                    }
-                                    Spacer(minLength: 0)
-                                    if model.selected == device.id { Image(systemName: "checkmark.circle.fill").foregroundStyle(mint) }
-                                }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(model.selected == device.id ? mint.opacity(0.09) : Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
-                            }.buttonStyle(.plain).disabled(model.running).help(device.id)
-                        }
-                    }
-                }.frame(maxHeight: 220)
-            }
-            Button { wireless = true } label: { Label("Connect over Wi-Fi", systemImage: "wifi").font(.system(size: 12, weight: .medium)).frame(maxWidth: .infinity).padding(.vertical, 8) }.buttonStyle(.bordered).disabled(model.running || model.updating)
-            if let device = model.selectedDevice, !device.ready {
-                Text(device.state == "unauthorized" ? "Unlock your phone and accept the USB debugging prompt, then refresh." : "Reconnect your phone and check that USB debugging is enabled.").font(.system(size: 12)).foregroundStyle(.orange).lineSpacing(4)
-            }
-            Spacer()
-            VStack(alignment: .leading, spacing: 10) {
-                Label("FIRST CONNECTION", systemImage: "info.circle").font(.system(size: 9, weight: .bold)).tracking(1)
-                Text("1  Enable Developer options\n2  Turn on USB debugging\n3  Connect & allow this Mac").font(.system(size: 11)).lineSpacing(7)
-            }.foregroundStyle(.secondary)
-            Divider().opacity(0.4)
-            HStack {
-                Circle().fill(mint).frame(width: 5, height: 5)
-                Text("scrcpy \(model.engineVersion) · \(model.engineSource)").font(.system(size: 10)).foregroundStyle(.secondary)
-                Spacer()
-                Link(destination: URL(string: "https://github.com/Genymobile/scrcpy")!) { Image(systemName: "arrow.up.right").font(.system(size: 10)) }
-            }
-        }.padding(.horizontal, 20).padding(.bottom, 22).background(Color.black.opacity(0.16))
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Scrcpy Desk").font(.system(size: 15, weight: .semibold))
+                .padding(.horizontal, 12).padding(.top, 48).padding(.bottom, 28)
+            ForEach(tabs.prefix(4), id: \.0) { name, icon in navigationItem(name, icon: icon) }
+            Divider().padding(.horizontal, 12).padding(.vertical, 16)
+            ForEach(tabs.suffix(2), id: \.0) { name, icon in navigationItem(name, icon: icon) }
+            Spacer(minLength: 24)
+            Link(destination: URL(string: "https://github.com/Genymobile/scrcpy")!) {
+                HStack {
+                    Text("scrcpy \(model.engineVersion)").font(.system(size: 11))
+                    Spacer()
+                    Image(systemName: "arrow.up.right").font(.system(size: 10))
+                }.foregroundStyle(.secondary)
+            }.help("Open scrcpy on GitHub").padding(12)
+        }.padding(.horizontal, 12).padding(.bottom, 12).background(Color.black.opacity(0.14))
     }
+
+    func navigationItem(_ name: String, icon: String) -> some View {
+        Button { tab = name } label: {
+            Label(name, systemImage: icon)
+                .font(.system(size: 13, weight: tab == name ? .semibold : .regular))
+                .foregroundStyle(tab == name ? Color.white : Color.white.opacity(0.7))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .background(tab == name ? Color.white.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).padding(.bottom, 4)
+            .accessibilityAddTraits(tab == name ? .isSelected : [])
+    }
+
     var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(tab == "Activity" ? "Behind the screen." : "Your phone. More room.").font(.system(size: 28, weight: .semibold, design: .rounded))
-                Text(tab == "Activity" ? "Session output and connection diagnostics." : "Mirror, control, and record your Android screen.").font(.system(size: 13)).foregroundStyle(.secondary)
-            }
+        HStack {
+            Text(tab).font(.system(size: 22, weight: .semibold))
             Spacer()
-            HStack(spacing: 6) { Circle().fill(model.running ? mint : Color.gray).frame(width: 6, height: 6); Text(model.running ? "LIVE" : "STANDBY").font(.system(size: 9, weight: .bold)).tracking(1) }.padding(.horizontal, 10).padding(.vertical, 7).background(Color.white.opacity(0.05), in: Capsule())
-        }
+            if model.running {
+                Label(model.stopping ? "Stopping…" : "Mirroring", systemImage: "record.circle")
+                    .font(.system(size: 12)).foregroundStyle(mint)
+            }
+        }.padding(.horizontal, 28).padding(.top, 32).padding(.bottom, 20)
     }
-    var mirrorPanel: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            sectionTitle("Make it feel right", subtitle: "Choose a starting point, then fine-tune below.")
-            HStack(spacing: 10) {
-                preset("Responsive", icon: "bolt", detail: "720-class · 60 fps", caption: "Lighter & quicker")
-                preset("Balanced", icon: "slider.horizontal.3", detail: "1080-class · 60 fps", caption: "The everyday choice")
-                preset("Crisp", icon: "sparkles", detail: "Native size · H.265", caption: "Every little detail")
-            }
-            card("DISPLAY", icon: "desktopcomputer") {
-                toggleRow("Desktop mode / virtual display", detail: "Open a separate desktop. Supported phones can show a desktop interface.", value: Binding(
-                    get: { model.options.desktopSettings.enabled },
-                    set: { model.options.setDesktopEnabled($0) }
-                ))
-                if model.options.desktopSettings.enabled {
-                    Divider()
-                    HStack(spacing: 24) {
-                        pick("Desktop resolution", value: $model.options.desktopSettings.resolution, choices: [("1920x1080", "1920 × 1080"), ("2560x1440", "2560 × 1440"), ("3840x2160", "3840 × 2160")])
-                        pick("Display density", value: $model.options.desktopSettings.dpi, choices: [("120", "120 dpi · More space"), ("160", "160 dpi · Balanced"), ("240", "240 dpi · Larger text"), ("320", "320 dpi · Largest text")])
-                    }
-                    Text("Your phone’s software determines the desktop interface. Lower density fits more on screen. The desktop closes when this session ends.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+
+    var deviceBar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                if model.devices.isEmpty {
+                    Label("No device connected", systemImage: "cable.connector")
+                        .font(.system(size: 13)).foregroundStyle(.secondary)
+                } else {
+                    Picker("Device", selection: $model.selected) {
+                        ForEach(model.devices) { device in
+                            Text("\(device.name) · \(device.ready ? (device.wireless ? "Wi-Fi" : "USB") : device.state.capitalized)").tag(device.id)
+                        }
+                    }.labelsHidden().frame(maxWidth: 360).disabled(model.running)
+                        .help(model.selectedDevice?.id ?? "Select a device")
                 }
+                Spacer(minLength: 8)
+                Button { model.refresh() } label: { Image(systemName: "arrow.clockwise") }
+                    .accessibilityLabel("Refresh devices").help("Refresh devices (⌘R)")
+                    .disabled(model.scanning || model.running)
+                Button { wireless = true } label: { Label("Connect over Wi-Fi", systemImage: "wifi") }
+                    .disabled(model.running || model.updating)
+            }.controlSize(.regular)
+            if model.devices.isEmpty {
+                hint(model.wirelessServices.isEmpty
+                     ? "Enable USB debugging, connect your phone, then accept the authorization prompt."
+                     : "A wireless device is available. Open Connect over Wi-Fi to pair it.")
+            } else if let device = model.selectedDevice, !device.ready {
+                hint(device.state == "unauthorized"
+                     ? "Unlock your phone and accept the debugging prompt, then refresh."
+                     : "Reconnect your phone and check that USB debugging is enabled.")
+                    .foregroundStyle(.orange)
             }
-            card("VIDEO", icon: "display") {
-                HStack(spacing: 24) {
+        }.padding(.horizontal, 28).padding(.bottom, 20)
+    }
+
+    var mirrorPanel: some View {
+        VStack(spacing: 0) {
+            settingsSection("Quality") {
+                Picker("Quality preset", selection: Binding(
+                    get: { model.options.presetName },
+                    set: { if $0 != "Custom" { model.options.preset($0) } }
+                )) {
+                    Text("Responsive").tag("Responsive")
+                    Text("Balanced").tag("Balanced")
+                    Text("Crisp").tag("Crisp")
+                    if model.options.presetName == "Custom" { Text("Custom").tag("Custom") }
+                }.labelsHidden().pickerStyle(.segmented)
+            }
+            settingsSection("Video") {
+                HStack(alignment: .top, spacing: 16) {
                     pick("Maximum size", value: $model.options.size, choices: [("1280", "1280 px"), ("1920", "1920 px"), ("2560", "2560 px"), ("0", "Native")])
                     pick("Frame rate", value: $model.options.fps, choices: [("30", "30 fps"), ("60", "60 fps"), ("90", "90 fps"), ("120", "120 fps"), ("0", "Unlimited")])
                     pick("Codec", value: $model.options.codec, choices: [("h264", "H.264"), ("h265", "H.265"), ("av1", "AV1")])
                 }
-                HStack { Text("Video bitrate").font(.system(size: 12)); Spacer(); TextField("8", text: $model.options.bitrate).textFieldStyle(.roundedBorder).frame(width: 70); Text("Mbps").font(.system(size: 11)).foregroundStyle(.secondary) }
-                Text("Maximum size limits the longer edge. H.265 and AV1 need device encoder support.").font(.system(size: 10)).foregroundStyle(.secondary)
-            }
-            card("WINDOW", icon: "macwindow") {
-                HStack { Toggle("Always on top", isOn: $model.options.onTop); Spacer(); Toggle("Start fullscreen", isOn: $model.options.fullscreen) }.font(.system(size: 12)).toggleStyle(.switch).controlSize(.small)
-            }
-            card("RECORDING", icon: "record.circle") {
-                HStack {
-                    VStack(alignment: .leading, spacing: 5) { Text("Save the session").font(.system(size: 13, weight: .medium)); Text("Recording begins when you start mirroring.").font(.system(size: 11)).foregroundStyle(.secondary) }
-                    Spacer(); Toggle("Record session", isOn: $model.options.recording).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                HStack(spacing: 8) {
+                    Text("Bitrate").font(.system(size: 13))
+                    Spacer()
+                    TextField("8", text: $model.options.bitrate).accessibilityLabel("Video bitrate")
+                        .textFieldStyle(.roundedBorder).frame(width: 72)
+                    Text("Mbps").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
+                hint("Maximum size limits the longer edge. H.265 and AV1 require a supported device encoder.")
+            }
+            settingsSection("Display") {
+                toggleRow("Desktop mode / virtual display", value: Binding(
+                    get: { model.options.desktopSettings.enabled },
+                    set: { model.options.setDesktopEnabled($0) }
+                ))
+                if model.options.desktopSettings.enabled {
+                    HStack(alignment: .top, spacing: 16) {
+                        pick("Resolution", value: $model.options.desktopSettings.resolution, choices: [("1920x1080", "1920 × 1080"), ("2560x1440", "2560 × 1440"), ("3840x2160", "3840 × 2160")])
+                        pick("Density", value: $model.options.desktopSettings.dpi, choices: [("120", "120 dpi"), ("160", "160 dpi"), ("240", "240 dpi"), ("320", "320 dpi")])
+                    }
+                    hint("The phone determines the desktop interface. Lower density fits more on screen. The virtual display closes with the session.")
+                }
+            }
+            settingsSection("Window") {
+                toggleRow("Always on top", value: $model.options.onTop)
+                toggleRow("Start fullscreen", value: $model.options.fullscreen)
+            }
+            settingsSection("Recording", last: true) {
+                toggleRow("Record session", value: $model.options.recording)
                 if model.options.recording {
-                    HStack { Text(model.options.recordPath.isEmpty ? "Choose an MP4 or MKV file" : model.options.recordPath).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle); Spacer(); Button("Choose File…") { model.chooseRecording() } }
+                    HStack(spacing: 12) {
+                        Text(model.options.recordPath.isEmpty ? "No file selected" : URL(fileURLWithPath: model.options.recordPath).lastPathComponent)
+                            .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                            .help(model.options.recordPath)
+                        Spacer(minLength: 0)
+                        Button("Choose File…") { model.chooseRecording() }
+                    }
+                    hint("Recording starts with mirroring. Choose MP4 or MKV; MKV supports more codecs.")
                 }
             }
         }
     }
-    func preset(_ name: String, icon: String, detail: String, caption: String) -> some View {
-        let selected = model.options.presetName == name
-        return Button { model.options.preset(name) } label: {
-            VStack(alignment: .leading, spacing: 11) {
-                HStack { Image(systemName: icon).font(.system(size: 17)).foregroundStyle(selected ? mint : .secondary); Spacer(); if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(mint) } }
-                Text(name).font(.system(size: 14, weight: .semibold))
-                VStack(alignment: .leading, spacing: 4) { Text(detail).font(.system(size: 10, weight: .medium)); Text(caption).font(.system(size: 10)).foregroundStyle(.secondary) }
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(15).background(selected ? mint.opacity(0.07) : panelColor, in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).stroke(selected ? mint.opacity(0.6) : Color.white.opacity(0.07), lineWidth: 1))
-        }.buttonStyle(.plain)
-    }
+
     var audioPanel: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            sectionTitle("Bring the sound along", subtitle: "Audio forwarding requires Android 11 or later.")
-            card("AUDIO", icon: "speaker.wave.2") {
-                toggleRow("Forward audio", detail: "Play phone audio on your Mac.", value: $model.options.audio)
-                Divider()
-                HStack(spacing: 24) {
+        VStack(spacing: 0) {
+            settingsSection("Forwarding") {
+                toggleRow("Forward audio", value: $model.options.audio)
+                hint("Requires Android 11 or later. Unlock Android 11 devices before starting capture.")
+            }
+            settingsSection("Capture", last: true) {
+                HStack(alignment: .top, spacing: 16) {
                     pick("Source", value: $model.options.audioSource, choices: [("output", "Device output"), ("playback", "App playback"), ("mic", "Microphone")])
-                    pick("Audio codec", value: $model.options.audioCodec, choices: [("opus", "Opus"), ("aac", "AAC"), ("flac", "FLAC"), ("raw", "Raw")])
+                    pick("Codec", value: $model.options.audioCodec, choices: [("opus", "Opus"), ("aac", "AAC"), ("flac", "FLAC"), ("raw", "Raw")])
                 }.disabled(!model.options.audio)
-                Text("Device output mutes playback on the phone. App playback requires Android 13+ and apps may opt out. Unlock Android 11 devices before starting audio capture.").font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4)
+                hint("Device output mutes the phone. App playback requires Android 13+; apps can block capture.")
             }
         }
     }
+
     var controlPanel: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            sectionTitle("A little more hands-on", subtitle: "Choose how your Mac interacts with your phone.")
-            card("INPUT", icon: "keyboard") {
-                toggleRow("Control the device", detail: "Use your Mac keyboard and mouse.", value: $model.options.control)
-                HStack(spacing: 24) {
+        VStack(spacing: 0) {
+            settingsSection("Input") {
+                toggleRow("Control device", value: $model.options.control)
+                HStack(alignment: .top, spacing: 16) {
                     pick("Keyboard", value: $model.options.keyboard, choices: [("sdk", "Standard"), ("uhid", "Physical (UHID)"), ("disabled", "Disabled")])
                     pick("Mouse", value: $model.options.mouse, choices: [("sdk", "Standard"), ("uhid", "Physical (UHID)"), ("disabled", "Disabled")])
                 }.disabled(!model.options.control)
-                Text("UHID mouse captures the pointer. Press Option or Command to release it.").font(.system(size: 11)).foregroundStyle(.secondary)
-                Divider()
-                toggleRow("Sync clipboard", detail: "Share clipboard text between your Mac and Android.", value: $model.options.clipboard)
+                hint("UHID captures the pointer. Press Option or Command to release it.")
+                toggleRow("Sync clipboard", value: $model.options.clipboard)
             }
-            card("PHONE", icon: "iphone") {
-                toggleRow("Turn phone screen off", detail: "Keep mirroring while the phone screen is dark.", value: $model.options.screenOff)
-                toggleRow("Stay awake", detail: "Prevent sleep while the phone is plugged in.", value: $model.options.awake)
-                toggleRow("Show touches", detail: "Display physical touches on the phone screen.", value: $model.options.touches)
+            settingsSection("Phone") {
+                toggleRow("Turn screen off", detail: "Mirroring continues while the phone screen is off.", value: $model.options.screenOff)
+                toggleRow("Stay awake", detail: "Prevents sleep while connected to power.", value: $model.options.awake)
+                toggleRow("Show touches", value: $model.options.touches)
             }.disabled(!model.options.control)
-            card("HANDY SHORTCUTS", icon: "command") {
-                Text("In the mirror window:  ⌘ F  Fullscreen     ⌘ H  Home     ⌘ B  Back\n⌘ O  Phone screen off     ⌘ ⇧ O  Phone screen on").font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(10)
+            settingsSection("Shortcuts", last: true) {
+                shortcut("Fullscreen", keys: "⌘ F")
+                shortcut("Home", keys: "⌘ H")
+                shortcut("Back", keys: "⌘ B")
+                shortcut("Phone screen off", keys: "⌘ O")
+                shortcut("Phone screen on", keys: "⌘ ⇧ O")
+                hint("Use these shortcuts in the mirror window.")
             }
         }
     }
+
     var advancedPanel: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            sectionTitle("For the fine-tuners", subtitle: "More control, with the full scrcpy CLI within reach.")
-            card("CAPTURE & WINDOW", icon: "crop.rotate") {
-                HStack(spacing: 24) {
-                    pick("Capture rotation", value: $model.options.orientation, choices: [("0", "Automatic"), ("@", "Lock current"), ("@0", "Lock 0°"), ("@90", "Lock 90°"), ("@180", "Lock 180°"), ("@270", "Lock 270°")])
-                    VStack(alignment: .leading, spacing: 8) { Text("Window title").font(.system(size: 11)).foregroundStyle(.secondary); TextField("Device name", text: $model.options.title).textFieldStyle(.roundedBorder) }
-                }
-                TextField("Crop: width:height:x:y (optional)", text: $model.options.crop).textFieldStyle(.roundedBorder)
-                Toggle("Borderless window", isOn: $model.options.borderless).font(.system(size: 12))
+        VStack(spacing: 0) {
+            settingsSection("Capture") {
+                pick("Rotation", value: $model.options.orientation, choices: [("0", "Automatic"), ("@", "Lock current"), ("@0", "Lock 0°"), ("@90", "Lock 90°"), ("@180", "Lock 180°"), ("@270", "Lock 270°")])
+                field("Crop", placeholder: "width:height:x:y", text: $model.options.crop)
             }
-            card("ADDITIONAL ARGUMENTS", icon: "terminal") {
-                TextField("e.g. --video-buffer=50 --print-fps", text: $model.options.extra).textFieldStyle(.roundedBorder).font(.system(size: 12, design: .monospaced))
-                Text("Supports quoted values. Arguments are passed directly to scrcpy; shell commands are not executed. Avoid duplicating options already set above.").font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4)
+            settingsSection("Window") {
+                field("Title", placeholder: "Device name", text: $model.options.title)
+                toggleRow("Borderless window", value: $model.options.borderless)
+            }
+            settingsSection("Arguments") {
+                field("Additional arguments", placeholder: "--video-buffer=50 --print-fps", text: $model.options.extra, monospaced: true)
+                hint("Quoted values are supported. Avoid repeating options set in the interface.")
                 HStack {
-                    Button("Full option reference") { NSWorkspace.shared.open(model.optionReference) }
+                    Button("Option Reference") { NSWorkspace.shared.open(model.optionReference) }
                     Spacer()
-                    Button("Reset options") { model.options = Options() }
+                    Button("Reset Options") { model.options = Options() }
                 }
             }
-            card("COMMAND PREVIEW", icon: "chevron.left.forwardslash.chevron.right") {
-                Text(model.command).font(.system(size: 11, design: .monospaced)).foregroundStyle(mint.opacity(0.85)).textSelection(.enabled).lineSpacing(5)
+            settingsSection("Command", last: true) {
+                Text(model.command).font(.system(size: 12, design: .monospaced))
+                    .textSelection(.enabled).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12).background(panelColor, in: RoundedRectangle(cornerRadius: 6))
                 Button("Copy Command") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(model.command, forType: .string) }
             }
         }
     }
+
     var updatesPanel: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            sectionTitle("Keep the engine fresh", subtitle: "Stable releases from Genymobile’s official scrcpy repository.")
-            card("SCRCPY ENGINE", icon: "arrow.down.circle") {
+        VStack(spacing: 0) {
+            settingsSection("Engine") {
                 HStack {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("scrcpy \(model.engineVersion)").font(.system(size: 23, weight: .semibold, design: .rounded))
-                        Text("\(model.engineSource) · \(EngineStore.architecture == "arm64" ? "Apple Silicon" : "Intel")").font(.system(size: 12)).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("scrcpy \(model.engineVersion)").font(.system(size: 17, weight: .semibold))
+                        hint("\(model.engineSource) · \(EngineStore.architecture == "arm64" ? "Apple Silicon" : "Intel")")
                     }
                     Spacer()
                     if model.updating { ProgressView().controlSize(.small) }
                     Button(model.updating ? "Updating…" : "Check & Update") { model.checkAndUpdate() }
                         .disabled(model.updating || model.running || model.busy)
                 }
-                Text(model.updateStatus).font(.system(size: 12)).foregroundStyle(mint).textSelection(.enabled).lineSpacing(4)
-                if let date = model.lastUpdateCheck {
-                    Text("Last checked \(date.formatted(date: .abbreviated, time: .shortened))").font(.system(size: 10)).foregroundStyle(.secondary)
-                }
+                Text(model.updateStatus).font(.system(size: 12)).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let date = model.lastUpdateCheck { hint("Last checked \(date.formatted(date: .abbreviated, time: .shortened))") }
             }
-            card("AUTOMATIC UPDATES", icon: "arrow.triangle.2.circlepath") {
-                toggleRow("Check and install daily", detail: "While this app is open and no mirror session is running.", value: $model.automaticUpdates)
-                Text("Downloads the matching Mac release, verifies its SHA-256 digest, and checks that scrcpy and ADB run before switching. Active mirror sessions are never interrupted.").font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4)
+            settingsSection("Automatic") {
+                toggleRow("Check and install daily", value: $model.automaticUpdates)
+                hint("Checks while the app is open and idle. Downloads are verified before installation.")
             }
-            card("RECOVERY", icon: "clock.arrow.circlepath") {
-                Text("The bundled scrcpy 4.1 stays inside the app. Updates are stored separately in your Application Support folder, with the previous engine retained.").font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(4)
+            settingsSection("Recovery", last: true) {
+                hint("Updates retain the previous engine. Bundled scrcpy 4.1 is always available for rollback.")
                 if model.engineStore.isUpdated {
                     Button("Restore scrcpy \(model.engineStore.rollbackVersion)") { model.rollbackEngine() }
                         .disabled(model.updating || model.running || model.busy || model.scanning)
                 }
-                Link("View official releases ↗", destination: URL(string: "https://github.com/Genymobile/scrcpy/releases")!).font(.system(size: 12))
+                Link("Official Releases", destination: URL(string: "https://github.com/Genymobile/scrcpy/releases")!)
+                hint("Updates apply to scrcpy and ADB. The Scrcpy Desk interface is updated by downloading a new app release.")
             }
-            Text("This updates scrcpy and its bundled ADB, not the Scrcpy Desk interface. No admin password or app restart is required.").font(.system(size: 11)).foregroundStyle(.secondary)
         }
     }
+
     var activityPanel: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { sectionTitle("Session activity", subtitle: "Recent output from scrcpy and ADB."); Spacer(); Button("Export…") { model.exportLog() }; Button("Clear") { model.logs = "" } }
-            ScrollView([.vertical, .horizontal]) {
-                Text(model.logs.isEmpty ? "No activity yet. Connect a device and start mirroring." : model.logs).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.white.opacity(0.75)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .topLeading).padding(16)
-            }.frame(minHeight: 340, maxHeight: 430).background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 12))
+            HStack {
+                Text("Session output").font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button("Export…") { model.exportLog() }
+                Button("Clear") { model.logs = "" }.disabled(model.logs.isEmpty)
+            }
+            GeometryReader { geometry in
+                ScrollView([.vertical, .horizontal]) {
+                    Text(model.logs.isEmpty ? "No session output." : model.logs)
+                        .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                        .fixedSize(horizontal: true, vertical: true)
+                        .frame(minWidth: max(0, geometry.size.width - 32), minHeight: max(0, geometry.size.height - 32), alignment: .topLeading)
+                        .padding(16)
+                }
+            }.frame(height: 360).background(panelColor, in: RoundedRectangle(cornerRadius: 6))
             if let recording = model.lastRecording { Button("Show Last Recording in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: recording)]) } }
-            Text("Logs may include device identifiers and network addresses. Review them before sharing.").font(.system(size: 11)).foregroundStyle(.secondary)
+            hint("Logs can contain device identifiers, network addresses, and paths. Review before sharing.")
         }
     }
+
     var footer: some View {
         VStack(spacing: 0) {
-            Divider().opacity(0.35)
-            HStack(spacing: 18) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(model.status).font(.system(size: 12, weight: .medium)).lineLimit(2)
-                    Text(model.running ? "Options apply to your next session." : "\(model.options.presetName) · \(model.options.audio ? "Audio on" : "Audio off") · \(model.options.recording ? "Recording on" : "Recording off")").font(.system(size: 10)).foregroundStyle(.secondary)
+            Divider()
+            HStack(spacing: 20) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(model.running ? model.status : (model.canStart ? "Ready to mirror" : model.busy ? "Connecting…" : model.updating ? "Updating engine…" : "Connect a device to start"))
+                        .font(.system(size: 12, weight: .medium)).lineLimit(2)
+                    if model.running { hint("Stop the session to change options.") }
+                    else { hint("\(model.options.desktopSettings.enabled ? "Virtual display" : "Phone screen") · \(model.options.audio ? "Audio on" : "Audio off")\(model.options.recording ? " · Recording on" : "")") }
                 }
                 Spacer(minLength: 0)
                 Button { if model.running { model.stop() } else { model.start() } } label: {
-                    Label(model.stopping ? "Stopping…" : model.running ? "Stop Mirroring" : "Start Mirroring", systemImage: model.running ? "stop.fill" : "play.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.black.opacity(0.9)).padding(.horizontal, 18).padding(.vertical, 12).background(model.running ? Color.orange : mint, in: RoundedRectangle(cornerRadius: 9))
-                }.buttonStyle(.plain).disabled(model.stopping || (!model.running && !model.canStart)).opacity(model.canStart || model.running ? 1 : 0.4).keyboardShortcut(.return, modifiers: .command)
-            }.padding(.horizontal, 30).padding(.vertical, 19)
-        }.background(panelColor.opacity(0.35))
+                    Label(model.stopping ? "Stopping…" : model.running ? "Stop Mirroring" : "Start Mirroring", systemImage: model.running ? "stop.fill" : "play.fill")
+                        .font(.system(size: 13, weight: .semibold)).padding(.horizontal, 8).padding(.vertical, 6)
+                }.buttonStyle(.borderedProminent).tint(model.running ? .orange : mint)
+                    .disabled(model.stopping || (!model.running && !model.canStart))
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .help(model.running ? "Stop mirroring" : "Start mirroring (⌘Return)")
+            }.padding(.horizontal, 28).padding(.vertical, 16)
+        }.background(panelColor.opacity(0.4))
     }
-    func sectionTitle(_ title: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) { Text(title).font(.system(size: 17, weight: .semibold)); Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary) }
-    }
-    func card<Content: View>(_ title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Label(title, systemImage: icon).font(.system(size: 10, weight: .semibold)).tracking(1.2).foregroundStyle(.secondary)
-            content()
-        }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(panelColor, in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.05)))
-    }
-    func pick(_ label: String, value: Binding<String>, choices: [(String, String)]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
-            Picker(label, selection: value) { ForEach(choices, id: \.0) { Text($0.1).tag($0.0) } }.labelsHidden().frame(maxWidth: .infinity)
+
+    func settingsSection<Content: View>(_ title: String, last: Bool = false, @ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 24) {
+                Text(title).font(.system(size: 13, weight: .semibold))
+                    .frame(width: 88, alignment: .leading).padding(.top, 3)
+                VStack(alignment: .leading, spacing: 12, content: content)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }.padding(.vertical, 20)
+            if !last { Divider() }
         }
     }
-    func toggleRow(_ title: String, detail: String, value: Binding<Bool>) -> some View {
+
+    func pick(_ label: String, value: Binding<String>, choices: [(String, String)]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).font(.system(size: 12)).foregroundStyle(.secondary)
+            Picker(label, selection: value) { ForEach(choices, id: \.0) { Text($0.1).tag($0.0) } }
+                .labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    func toggleRow(_ title: String, detail: String? = nil, value: Binding<Bool>) -> some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+                if let detail { hint(detail) }
+            }
+            Spacer(minLength: 0)
+            Toggle(title, isOn: value).labelsHidden().toggleStyle(.switch).controlSize(.small)
+        }
+    }
+
+    func hint(_ text: String) -> some View {
+        Text(text).font(.system(size: 12)).foregroundStyle(.secondary)
+            .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+    }
+
+    func field(_ title: String, placeholder: String, text: Binding<String>, monospaced: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.system(size: 12)).foregroundStyle(.secondary)
+            TextField(placeholder, text: text).textFieldStyle(.roundedBorder)
+                .font(.system(size: 13, design: monospaced ? .monospaced : .default)).accessibilityLabel(title)
+        }
+    }
+
+    func shortcut(_ title: String, keys: String) -> some View {
         HStack {
-            VStack(alignment: .leading, spacing: 5) { Text(title).font(.system(size: 13, weight: .medium)); Text(detail).font(.system(size: 11)).foregroundStyle(.secondary) }
-            Spacer(); Toggle(title, isOn: value).labelsHidden().toggleStyle(.switch).controlSize(.small)
+            Text(title).font(.system(size: 13))
+            Spacer()
+            Text(keys).font(.system(size: 12)).foregroundStyle(.secondary)
         }
     }
 }
@@ -353,84 +422,100 @@ struct WirelessView: View {
     @State private var pairingAddress = ""
     @State private var code = ""
     @State private var connectAddress = ""
+    @State private var manualConnection = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                Image(systemName: "wifi").font(.title2).foregroundStyle(mint)
-                Text("Connect over Wi-Fi").font(.title2.bold())
+            HStack {
+                Text("Connect over Wi-Fi").font(.system(size: 20, weight: .semibold))
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding(24)
             Divider()
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    instruction("Keep your Mac and phone on the same Wi-Fi. On your phone, open Developer options → Wireless debugging.")
-                    GroupBox {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Text("Nearby devices").font(.headline)
-                                Spacer()
-                                if model.wirelessScanning { ProgressView().controlSize(.small) }
-                                Button("Refresh") { model.scanWireless() }.disabled(model.wirelessScanning || model.busy)
-                            }
-                            instruction(model.wirelessStatus)
-                            ForEach(model.wirelessServices) { service in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(service.name).font(.system(size: 12, weight: .semibold)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                                    Text(service.endpoint).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
-                                    if let failure = model.wirelessFailures[service.endpoint], !model.wirelessConnected(service) {
-                                        Text(failure).font(.system(size: 12)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 24) {
+                    instruction("Connect both devices to the same Wi-Fi. On your phone, enable Developer options → Wireless debugging.")
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Nearby devices").font(.system(size: 13, weight: .semibold))
+                            Spacer()
+                            if model.wirelessScanning { ProgressView().controlSize(.small) }
+                            Button("Refresh") { model.scanWireless() }.disabled(model.wirelessScanning || model.busy)
+                        }
+                        if model.wirelessServices.isEmpty { instruction(model.wirelessStatus) }
+                        ForEach(model.wirelessServices) { service in
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(alignment: .top, spacing: 16) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(service.name).font(.system(size: 12, weight: .medium)).textSelection(.enabled)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                        Text(service.endpoint).font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
+                                        instruction(service.kind == .pairing ? "Pairing service" : model.wirelessConnected(service) ? "Connected" : "Connection service")
                                     }
-                                    HStack {
-                                        Text(service.kind == .pairing ? "Ready to pair" : (model.wirelessConnected(service) ? "Connected" : "Wireless debugging available")).font(.system(size: 12)).foregroundStyle(mint)
-                                        Spacer()
-                                        if service.kind == .pairing {
-                                            Button("Use for pairing") { pairingAddress = service.endpoint }
-                                        } else {
-                                            Button(model.wirelessConnected(service) ? "Connected" : "Connect device") { connectAddress = service.endpoint; model.connect(service.endpoint) }.disabled(model.wirelessConnected(service))
-                                        }
+                                    Spacer(minLength: 0)
+                                    if service.kind == .pairing {
+                                        Button("Use for pairing") { pairingAddress = service.endpoint }
+                                    } else {
+                                        Button(model.wirelessConnected(service) ? "Connected" : "Connect") { connectAddress = service.endpoint; model.connect(service.endpoint) }
+                                            .disabled(model.wirelessConnected(service) || model.busy)
                                     }
-                                }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(canvas, in: RoundedRectangle(cornerRadius: 8))
-                            }
-                            instruction("Paired phones reconnect automatically. For a new phone, tap “Pair device with pairing code” to advertise its pairing service.")
-                        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                if let failure = model.wirelessFailures[service.endpoint], !model.wirelessConnected(service) {
+                                    Text(failure).font(.system(size: 12)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }.padding(.vertical, 12)
+                            Divider()
+                        }
+                        instruction("Paired phones reconnect automatically. To pair a new phone, open “Pair device with pairing code” on the phone.")
                     }
-                    GroupBox {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Pair once").font(.headline)
-                            instruction("Tap “Pair device with pairing code” on your phone. Select its nearby pairing service above, then enter the six-digit code. You can also enter the pairing IP and port manually.")
-                            TextField("Pairing IP:port", text: $pairingAddress).accessibilityLabel("Pairing IP and port")
-                            HStack {
-                                SecureField("Six-digit pairing code", text: $code).accessibilityLabel("Six-digit pairing code")
-                                Button("Pair") { model.connect(pairingAddress, pairCode: code); code = "" }.disabled(model.busy || pairingAddress.isEmpty || code.count != 6)
+                    Divider()
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Pair device").font(.system(size: 13, weight: .semibold))
+                        instruction("Select the pairing service above or enter its IP and port. Enter the six-digit code shown on your phone.")
+                        labeledField("Pairing address", placeholder: "192.168.1.10:37000", text: $pairingAddress)
+                        HStack(alignment: .bottom, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Pairing code").font(.system(size: 12)).foregroundStyle(.secondary)
+                                SecureField("Six-digit code", text: $code).accessibilityLabel("Pairing code")
                             }
-                        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                            Button("Pair") { model.connect(pairingAddress, pairCode: code); code = "" }
+                                .disabled(model.busy || pairingAddress.isEmpty || code.count != 6)
+                        }
                     }
-                    GroupBox {
+                    Divider()
+                    DisclosureGroup("Connect manually", isExpanded: $manualConnection) {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Connect manually").font(.headline)
-                            instruction("If discovery is blocked by your network, use the IP address and port on the main Wireless debugging page. This connection port differs from the pairing port.")
-                            HStack {
-                                TextField("Connection IP:port", text: $connectAddress).accessibilityLabel("Connection IP and port")
+                            instruction("Use the IP and port on the main Wireless debugging page. The connection port differs from the pairing port.")
+                            HStack(alignment: .bottom, spacing: 12) {
+                                labeledField("Connection address", placeholder: "192.168.1.10:39000", text: $connectAddress)
                                 Button("Connect") { model.connect(connectAddress) }.disabled(model.busy || connectAddress.isEmpty)
                             }
-                        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                        }.padding(.top, 12)
+                    }.font(.system(size: 13))
                     if model.busy { HStack { ProgressView().controlSize(.small); Text("Connecting…").font(.system(size: 12)) } }
-                    Text(model.status).font(.system(size: 12)).foregroundStyle(mint).fixedSize(horizontal: false, vertical: true)
                     if let error = model.error {
                         Text(error).font(.system(size: 12)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                     }
+                    if !model.devices.isEmpty { instruction(model.status) }
                     DisclosureGroup("Connection activity") {
-                        Text(String(model.logs.suffix(1800))).font(.system(size: 10, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true).padding(.top, 8)
-                    }.font(.system(size: 12))
+                        Text(String(model.logs.suffix(1800))).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true).padding(.top, 8)
+                    }.font(.system(size: 13))
                 }.padding(24)
             }
-        }.textFieldStyle(.roundedBorder).frame(width: 600, height: 650).background(canvas).preferredColorScheme(.dark)
+        }.textFieldStyle(.roundedBorder).frame(width: 600, height: 640).background(canvas).preferredColorScheme(.dark)
             .onAppear { model.startWirelessDiscovery() }
     }
+
     private func instruction(_ text: String) -> some View {
         Text(text).font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(3)
             .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func labeledField(_ title: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.system(size: 12)).foregroundStyle(.secondary)
+            TextField(placeholder, text: text).accessibilityLabel(title)
+        }
     }
 }

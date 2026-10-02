@@ -46,3 +46,12 @@ Results: all 33 updater checks passed, plus a live GitHub API/download SHA-256 c
 ## Naming update in 1.3.1
 
 Renamed the option and related help/error/documentation text to Desktop mode / virtual display. Both architectures compile. Native UI confirms the generic label and saved desktop configuration; app signature and DMG checksum verified.
+
+## Layout redesign feature branch
+
+- Applied Impeccable's layout, distill, clarify, Operate, and craft-floor guidance directly to the native SwiftUI interface. The context launcher could not initialize its cache in the sandbox; no engine detector ran because its HTML/CSS checks do not apply to SwiftUI.
+- Both arm64 and x86_64 launchers compile for macOS 13+. The universal preview app signature verifies.
+- 37 core checks and the process integration suite passed. No session-command or connection-model changes were needed.
+- Native inspection covered Mirror, Audio, Control, Advanced, Activity, Updates, and the Wi-Fi sheet. Regular and near-minimum-width windows were checked (1220 and 843 points wide). Guidance wraps; the persistent session action stays visible; lower settings, command copy, and expanded manual Wi-Fi connection remain reachable by scrolling.
+- The existing bitrate of 30 Mbps and enabled 1920 × 1080 / 160 dpi virtual display were preserved. Toggling the virtual display off hides its controls and updates the session summary; turning it back on restores the values.
+- No phone was connected during the layout inspection. Live session behavior remains covered by the prior phone verification and process fixtures.
