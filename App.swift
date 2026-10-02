@@ -97,7 +97,7 @@ struct DeskView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Image(systemName: "cable.connector").font(.system(size: 29)).foregroundStyle(.secondary)
                     Text("Waiting for a device").font(.system(size: 13, weight: .medium))
-                    Text("Connect with USB, or pair your phone over Wi-Fi.").font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(4)
+                    Text(model.wirelessServices.isEmpty ? "Connect with USB, or pair your phone over Wi-Fi." : "Nearby Wi-Fi device found. Open Connect over Wi-Fi to pair.").font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
                 }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
             } else {
                 ScrollView {
@@ -153,6 +153,21 @@ struct DeskView: View {
                 preset("Responsive", icon: "bolt", detail: "720-class · 60 fps", caption: "Lighter & quicker")
                 preset("Balanced", icon: "slider.horizontal.3", detail: "1080-class · 60 fps", caption: "The everyday choice")
                 preset("Crisp", icon: "sparkles", detail: "Native size · H.265", caption: "Every little detail")
+            }
+            card("DISPLAY", icon: "desktopcomputer") {
+                toggleRow("Desktop mode / virtual display", detail: "Open a separate desktop. Supported phones can show a desktop interface.", value: Binding(
+                    get: { model.options.desktopSettings.enabled },
+                    set: { model.options.setDesktopEnabled($0) }
+                ))
+                if model.options.desktopSettings.enabled {
+                    Divider()
+                    HStack(spacing: 24) {
+                        pick("Desktop resolution", value: $model.options.desktopSettings.resolution, choices: [("1920x1080", "1920 × 1080"), ("2560x1440", "2560 × 1440"), ("3840x2160", "3840 × 2160")])
+                        pick("Display density", value: $model.options.desktopSettings.dpi, choices: [("120", "120 dpi · More space"), ("160", "160 dpi · Balanced"), ("240", "240 dpi · Larger text"), ("320", "320 dpi · Largest text")])
+                    }
+                    Text("Your phone’s software determines the desktop interface. Lower density fits more on screen. The desktop closes when this session ends.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+                }
             }
             card("VIDEO", icon: "display") {
                 HStack(spacing: 24) {
@@ -339,27 +354,83 @@ struct WirelessView: View {
     @State private var code = ""
     @State private var connectAddress = ""
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            HStack { Image(systemName: "wifi").font(.title2).foregroundStyle(mint); Text("Connect over Wi-Fi").font(.title2.bold()); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
-            Text("Keep your Mac and phone on the same network. On Android 11+, open Developer options → Wireless debugging.").font(.system(size: 13)).foregroundStyle(.secondary).lineSpacing(4)
-            GroupBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("1. Pair once").font(.headline)
-                    Text("Tap “Pair device with pairing code” on your phone. Use the address and port inside that dialog.").font(.system(size: 12)).foregroundStyle(.secondary)
-                    TextField("Pairing IP:port", text: $pairingAddress)
-                    HStack { SecureField("Six-digit pairing code", text: $code); Button("Pair") { model.connect(pairingAddress, pairCode: code); code = "" }.disabled(model.busy || code.isEmpty) }
-                }.padding(10)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Image(systemName: "wifi").font(.title2).foregroundStyle(mint)
+                Text("Connect over Wi-Fi").font(.title2.bold())
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+            }.padding(24)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    instruction("Keep your Mac and phone on the same Wi-Fi. On your phone, open Developer options → Wireless debugging.")
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text("Nearby devices").font(.headline)
+                                Spacer()
+                                if model.wirelessScanning { ProgressView().controlSize(.small) }
+                                Button("Refresh") { model.scanWireless() }.disabled(model.wirelessScanning || model.busy)
+                            }
+                            instruction(model.wirelessStatus)
+                            ForEach(model.wirelessServices) { service in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(service.name).font(.system(size: 12, weight: .semibold)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                                    Text(service.endpoint).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
+                                    if let failure = model.wirelessFailures[service.endpoint], !model.wirelessConnected(service) {
+                                        Text(failure).font(.system(size: 12)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                                    }
+                                    HStack {
+                                        Text(service.kind == .pairing ? "Ready to pair" : (model.wirelessConnected(service) ? "Connected" : "Wireless debugging available")).font(.system(size: 12)).foregroundStyle(mint)
+                                        Spacer()
+                                        if service.kind == .pairing {
+                                            Button("Use for pairing") { pairingAddress = service.endpoint }
+                                        } else {
+                                            Button(model.wirelessConnected(service) ? "Connected" : "Connect device") { connectAddress = service.endpoint; model.connect(service.endpoint) }.disabled(model.wirelessConnected(service))
+                                        }
+                                    }
+                                }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(canvas, in: RoundedRectangle(cornerRadius: 8))
+                            }
+                            instruction("Paired phones reconnect automatically. For a new phone, tap “Pair device with pairing code” to advertise its pairing service.")
+                        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Pair once").font(.headline)
+                            instruction("Tap “Pair device with pairing code” on your phone. Select its nearby pairing service above, then enter the six-digit code. You can also enter the pairing IP and port manually.")
+                            TextField("Pairing IP:port", text: $pairingAddress).accessibilityLabel("Pairing IP and port")
+                            HStack {
+                                SecureField("Six-digit pairing code", text: $code).accessibilityLabel("Six-digit pairing code")
+                                Button("Pair") { model.connect(pairingAddress, pairCode: code); code = "" }.disabled(model.busy || pairingAddress.isEmpty || code.count != 6)
+                            }
+                        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Connect manually").font(.headline)
+                            instruction("If discovery is blocked by your network, use the IP address and port on the main Wireless debugging page. This connection port differs from the pairing port.")
+                            HStack {
+                                TextField("Connection IP:port", text: $connectAddress).accessibilityLabel("Connection IP and port")
+                                Button("Connect") { model.connect(connectAddress) }.disabled(model.busy || connectAddress.isEmpty)
+                            }
+                        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if model.busy { HStack { ProgressView().controlSize(.small); Text("Connecting…").font(.system(size: 12)) } }
+                    Text(model.status).font(.system(size: 12)).foregroundStyle(mint).fixedSize(horizontal: false, vertical: true)
+                    if let error = model.error {
+                        Text(error).font(.system(size: 12)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    }
+                    DisclosureGroup("Connection activity") {
+                        Text(String(model.logs.suffix(1800))).font(.system(size: 10, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true).padding(.top, 8)
+                    }.font(.system(size: 12))
+                }.padding(24)
             }
-            GroupBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("2. Connect").font(.headline)
-                    Text("Use the IP address and port on the main Wireless debugging page. The connection port is different from the pairing port.").font(.system(size: 12)).foregroundStyle(.secondary)
-                    HStack { TextField("Connection IP:port", text: $connectAddress); Button("Connect") { model.connect(connectAddress) }.disabled(model.busy || connectAddress.isEmpty) }
-                }.padding(10)
-            }
-            if model.busy { ProgressView().controlSize(.small) }
-            Text(model.status).font(.system(size: 12)).foregroundStyle(mint)
-            ScrollView { Text(String(model.logs.suffix(1800))).font(.system(size: 10, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(height: 90)
-        }.textFieldStyle(.roundedBorder).padding(28).frame(width: 520).background(canvas).preferredColorScheme(.dark)
+        }.textFieldStyle(.roundedBorder).frame(width: 600, height: 650).background(canvas).preferredColorScheme(.dark)
+            .onAppear { model.startWirelessDiscovery() }
+    }
+    private func instruction(_ text: String) -> some View {
+        Text(text).font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(3)
+            .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
     }
 }

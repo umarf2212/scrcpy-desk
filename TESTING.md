@@ -26,3 +26,23 @@ swiftc Core.swift Updater.swift UpdaterTests.swift -o /tmp/scrcpy-updater-tests
 Use the x86_64 archive on an Intel Mac. The optional --live checks the actual GitHub API and downloads/checksums the current Mac asset. There was no newer release than 4.1 at implementation time; the app correctly reports that it is up to date.
 
 Results: all 33 updater checks passed, plus a live GitHub API/download SHA-256 check. The existing process integration suite also passed after the change. The 1.1 native UI was inspected and its Check & Update action visibly reported that scrcpy 4.1 is up to date. Both launcher architectures compiled; the new app signature and compressed DMG checksum verified.
+
+## Wi-Fi discovery in 1.2
+
+- 29 core checks passed, including Android mDNS service parsing, distinct pairing/connection ports, IPv6 endpoints, and matching device names across random service suffixes.
+- Process integration passed with an unpaired phone visible before authorization, one automatic connection attempt per advertisement, inline connection diagnostics, code pairing followed by automatic connection to the correct port, and diagnostic clearing on success. Existing recording, stop, arguments and invalid-input checks also passed.
+- Both launcher architectures compile for macOS 13+. ADB commands execute serially to avoid competing daemon startup attempts.
+- Live app discovery found the Samsung phone advertised on the local network. Inspected screenshots and accessibility of the Wi-Fi sheet at the top and bottom: instructions wrap fully and all controls are reachable by scrolling.
+- The existing idle ADB daemon initially returned “No route to host” despite a successful direct TCP reachability check. Restarted the daemon under the new app; that routing error cleared. The user subsequently paired the phone and confirmed live mirroring works.
+- 33 updater checks passed using the pinned 4.1 release fixture and official archive.
+
+## Desktop option in 1.3
+
+- 37 core checks passed, including older settings preservation, desktop resolution/density persistence, migration from manually entered virtual-display arguments, toggle-off behavior, and rejection of conflicting display selection.
+- Process integration passed and confirmed that enabling the option launches scrcpy with `--new-display=1920x1080/160`. Existing session, recording and Wi-Fi checks passed.
+- Both arm64 and x86_64 launchers compile for macOS 13+. Native UI inspection verified the Display card, toggle, resolution/density controls, command preview, and preservation of the existing bitrate setting.
+- App signature and DMG checksum verified. The user previously confirmed this virtual-display command opens their desktop; no Android device was connected during this update’s UI check.
+
+## Naming update in 1.3.1
+
+Renamed the option and related help/error/documentation text to Desktop mode / virtual display. Both architectures compile. Native UI confirms the generic label and saved desktop configuration; app signature and DMG checksum verified.

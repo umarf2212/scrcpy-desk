@@ -30,7 +30,7 @@ for arch, (upstream, checksum) in releases.items():
             (dest / 'adb-thin').replace(dest / exe)
         run('codesign', '--force', '--sign', '-', dest / exe)
     binary = WORK / f'ScrcpyDesk-{arch}'
-    run('swiftc', '-swift-version', '5', '-O', '-target', f'{arch}-apple-macosx13.0', SOURCE / 'Core.swift', SOURCE / 'Model.swift', SOURCE / 'Updater.swift', SOURCE / 'App.swift', '-o', binary, '-module-cache-path', WORK / 'module-cache')
+    run('swiftc', '-swift-version', '5', '-O', '-target', f'{arch}-apple-macosx13.0', SOURCE / 'Core.swift', SOURCE / 'Model.swift', SOURCE / 'Updater.swift', SOURCE / 'Wireless.swift', SOURCE / 'App.swift', '-o', binary, '-module-cache-path', WORK / 'module-cache')
 run('lipo', '-create', WORK / 'ScrcpyDesk-arm64', WORK / 'ScrcpyDesk-x86_64', '-output', macos / 'ScrcpyDesk')
 run('swift', '-module-cache-path', WORK / 'module-cache', SOURCE / 'Icon.swift', WORK / 'icon.png')
 iconset = WORK / 'AppIcon.iconset'; iconset.mkdir(exist_ok=True)
@@ -39,7 +39,7 @@ for size in [16, 32, 128, 256, 512]:
         target = iconset / f'icon_{size}x{size}{"@2x" if scale == 2 else ""}.png'
         run('sips', '-z', size * scale, size * scale, WORK / 'icon.png', '--out', target)
 run('iconutil', '-c', 'icns', iconset, '-o', resources / 'AppIcon.icns')
-info = {'CFBundleName': 'Scrcpy Desk', 'CFBundleDisplayName': 'Scrcpy Desk', 'CFBundleIdentifier': 'local.scrcpydesk.app', 'CFBundleVersion': '2', 'CFBundleShortVersionString': '1.1.0', 'CFBundleExecutable': 'ScrcpyDesk', 'CFBundlePackageType': 'APPL', 'CFBundleIconFile': 'AppIcon', 'LSMinimumSystemVersion': '13.0', 'NSHighResolutionCapable': True, 'NSPrincipalClass': 'NSApplication', 'NSLocalNetworkUsageDescription': 'Connect to Android devices with wireless debugging on your local network.'}
+info = {'CFBundleName': 'Scrcpy Desk', 'CFBundleDisplayName': 'Scrcpy Desk', 'CFBundleIdentifier': 'local.scrcpydesk.app', 'CFBundleVersion': '5', 'CFBundleShortVersionString': '1.3.1', 'CFBundleExecutable': 'ScrcpyDesk', 'CFBundlePackageType': 'APPL', 'CFBundleIconFile': 'AppIcon', 'LSMinimumSystemVersion': '13.0', 'NSHighResolutionCapable': True, 'NSPrincipalClass': 'NSApplication', 'NSLocalNetworkUsageDescription': 'Discover and connect to Android devices with wireless debugging on your local network.', 'NSBonjourServices': ['_adb-tls-pairing._tcp', '_adb-tls-connect._tcp']}
 (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(info))
 helptext = subprocess.check_output([str(resources / 'Engine/arm64/scrcpy'), '--help']) if subprocess.check_output(['uname', '-m']).strip() == b'arm64' else subprocess.check_output([str(resources / 'Engine/x86_64/scrcpy'), '--help'])
 (resources / 'scrcpy-help.txt').write_bytes(helptext)
@@ -50,7 +50,7 @@ stage = WORK / 'dmg-stage'
 if stage.exists(): shutil.rmtree(stage)
 stage.mkdir(); shutil.copytree(app, stage / app.name); (stage / 'Applications').symlink_to('/Applications')
 shutil.copy2(SOURCE / 'README.md', stage / 'Read Me.md')
-dmg = OUT / 'Scrcpy-Desk-1.1-Universal.dmg'
+dmg = OUT / 'Scrcpy-Desk-1.3.1-Universal.dmg'
 if dmg.exists(): dmg.unlink()
 run('hdiutil', 'create', '-volname', 'Scrcpy Desk', '-srcfolder', stage, '-ov', '-format', 'UDZO', dmg)
 print(f'Built {app}\nBuilt {dmg}')

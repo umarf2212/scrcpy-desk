@@ -13,6 +13,16 @@ final class DeskModel: ObservableObject {
     @Published var status = "Connect your Android to get started"
     @Published var error: String?
     @Published var lastRecording: String?
+    @Published var wirelessServices: [WirelessService] = []
+    @Published var wirelessFailures: [String: String] = [:]
+    @Published var wirelessScanning = false
+    @Published var wirelessStatus = "Looking for wireless debugging devices…"
+    private let discovery = WirelessDiscovery()
+    private var bonjourServices: [WirelessService] = []
+    private var adbServices: [WirelessService] = []
+    private var attemptedWireless = Set<String>()
+    private var discoveryStarted = false
+    private let adbQueue = DispatchQueue(label: "local.scrcpydesk.adb", qos: .userInitiated)
     private var session: Process?
     private var timer: Timer?
     private var requestedStop = false
@@ -51,8 +61,57 @@ final class DeskModel: ObservableObject {
 
     }
     func begin() {
+        startWirelessDiscovery()
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.refresh(); self?.checkAutomatically() }
+        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.refresh(); self?.scanWireless(); self?.checkAutomatically() }
+    }
+    func startWirelessDiscovery() {
+        guard !discoveryStarted else { scanWireless(); return }
+        discoveryStarted = true
+        discovery.onChange = { [weak self] services in
+            guard let self else { return }
+            self.bonjourServices = services
+            self.mergeWirelessServices()
+        }
+        discovery.onError = { [weak self] message in self?.wirelessStatus = message }
+        discovery.start()
+        scanWireless()
+    }
+    func scanWireless() {
+        guard !wirelessScanning, !busy, !updating else { return }
+        wirelessScanning = true
+        adb(["mdns", "services"], timeout: 8) { [weak self] code, text in
+            guard let self else { return }
+            self.wirelessScanning = false
+            self.adbServices = code == 0 ? WirelessService.parse(text) : []
+            self.mergeWirelessServices()
+            if code != 0 && self.wirelessServices.isEmpty {
+                self.wirelessStatus = "ADB discovery is unavailable. Listening with Bonjour; check Local Network access if no devices appear."
+            }
+        }
+    }
+    func mergeWirelessServices() {
+        var merged = Dictionary(adbServices.map { ($0.id, $0) }, uniquingKeysWith: { _, newer in newer })
+        for service in bonjourServices { merged[service.id] = service }
+        wirelessServices = merged.values.sorted { $0.id < $1.id }
+        let endpoints = Set(wirelessServices.filter { $0.kind == .connection }.map(\.endpoint))
+        attemptedWireless.formIntersection(endpoints)
+        wirelessFailures = wirelessFailures.filter { endpoints.contains($0.key) }
+        wirelessStatus = wirelessServices.isEmpty
+            ? "No devices found yet. Keep Wireless debugging open on your phone. Guest Wi-Fi or router isolation can block discovery."
+            : "Found \(wirelessServices.count) wireless debugging service(s)."
+        autoConnectWireless()
+    }
+    func wirelessConnected(_ service: WirelessService) -> Bool {
+        devices.contains { $0.ready && ($0.id == service.endpoint || $0.id.contains(service.name)) }
+    }
+    func autoConnectWireless() {
+        guard !busy, !updating, !running else { return }
+        guard let service = wirelessServices.first(where: {
+            $0.kind == .connection && !wirelessConnected($0) && !attemptedWireless.contains($0.endpoint)
+        }) else { return }
+        attemptedWireless.insert(service.endpoint)
+        connect(service.endpoint, automatic: true)
     }
     func checkAutomatically() {
         guard automaticUpdates, !running, !busy, !updating else { return }
@@ -108,7 +167,7 @@ final class DeskModel: ObservableObject {
     // A bounded worker captures output without blocking the UI or filling a pipe.
     func adb(_ arguments: [String], timeout: Double = 15, completion: @escaping (Int32, String) -> Void) {
         let executable = root.appendingPathComponent("adb"), env = environment
-        DispatchQueue.global(qos: .userInitiated).async {
+        adbQueue.async {
             let process = Process(), pipe = Pipe()
             process.executableURL = executable; process.arguments = arguments; process.environment = env
             process.standardOutput = pipe; process.standardError = pipe
@@ -137,6 +196,7 @@ final class DeskModel: ObservableObject {
             if code == 0 {
                 self.devices = Device.parse(text)
                 if !self.devices.contains(where: { $0.id == self.selected }) { self.selected = self.devices.first(where: \.ready)?.id ?? self.devices.first?.id ?? "" }
+                self.autoConnectWireless()
                 if !self.running { self.status = self.devices.isEmpty ? "Connect your Android to get started" : "\(self.devices.filter(\.ready).count) device(s) ready" }
             } else {
                 self.devices = []; self.selected = ""
@@ -145,7 +205,7 @@ final class DeskModel: ObservableObject {
             }
         }
     }
-    func connect(_ endpoint: String, pairCode: String? = nil) {
+    func connect(_ endpoint: String, pairCode: String? = nil, automatic: Bool = false) {
         guard !busy, !updating, !running else { return }
         do {
             let address = try validateEndpoint(endpoint)
@@ -158,8 +218,23 @@ final class DeskModel: ObservableObject {
             append(pairCode == nil ? "\nConnecting to \(address)…\n" : "\nPairing with \(address)…\n")
             adb(args, timeout: 30) { [weak self] code, text in
                 guard let self else { return }; self.busy = false; self.append(text)
-                if code != 0 || text.lowercased().contains("failed") || text.lowercased().contains("cannot") { self.error = text }
-                else { self.status = pairCode == nil ? "Connected. Select your device to start." : "Paired. Now connect using the main wireless debugging port." }
+                if code != 0 || text.lowercased().contains("failed") || text.lowercased().contains("cannot") || text.lowercased().contains("unable") {
+                    if pairCode == nil { self.wirelessFailures[address] = text.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    if !automatic { self.error = text }
+                } else if pairCode != nil {
+                    self.status = "Paired. Connecting automatically…"
+                    let paired = self.wirelessServices.first { $0.kind == .pairing && $0.endpoint == address }
+                    // Pairing succeeds after the connection service has already been
+                    // advertised. Retry that service without waiting for a new event.
+                    let related = self.wirelessServices.filter {
+                        $0.kind == .connection && ($0.host == paired?.host || $0.deviceKey == paired?.deviceKey || address.hasPrefix($0.host + ":"))
+                    }
+                    for service in related { self.attemptedWireless.remove(service.endpoint) }
+                    self.scanWireless()
+                } else {
+                    self.wirelessFailures.removeValue(forKey: address)
+                    self.status = "Connected. Select your device to start."
+                }
                 self.refresh()
             }
         } catch { self.error = error.localizedDescription }

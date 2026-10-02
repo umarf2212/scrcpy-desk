@@ -45,6 +45,13 @@ func shellQuote(_ text: String) -> String {
     return !text.isEmpty && text.unicodeScalars.allSatisfy(safe.contains) ? text : "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
 }
 
+struct DesktopOptions: Codable, Equatable {
+    var enabled = false
+    var resolution = "1920x1080"
+    var dpi = "160"
+    var argument: String { "--new-display=\(resolution)/\(dpi)" }
+}
+
 struct Options: Codable, Equatable {
     var size = "1920", fps = "60", bitrate = "8", codec = "h264"
     var audio = true, audioSource = "output", audioCodec = "opus"
@@ -53,6 +60,20 @@ struct Options: Codable, Equatable {
     var onTop = false, fullscreen = false, borderless = false
     var orientation = "0", title = "", crop = "", extra = ""
     var recording = false, recordPath = ""
+    // Optional storage keeps settings saved by earlier versions decodable.
+    var desktop: DesktopOptions?
+    var desktopSettings: DesktopOptions {
+        get { desktop ?? DesktopOptions() }
+        set { desktop = newValue }
+    }
+    mutating func setDesktopEnabled(_ enabled: Bool) {
+        desktopSettings.enabled = enabled
+        if enabled, let tokens = try? splitArguments(extra) {
+            // Move virtual display control out of the advanced field so turning
+            // the toggle off also returns to normal phone mirroring.
+            extra = tokens.filter { $0 != "--new-display" && !$0.hasPrefix("--new-display=") }.map(shellQuote).joined(separator: " ")
+        }
+    }
     mutating func preset(_ name: String) {
         switch name {
         case "Responsive": size = "1280"; fps = "60"; bitrate = "4"; codec = "h264"
@@ -91,7 +112,20 @@ struct Options: Codable, Equatable {
             guard !recordPath.isEmpty, ["mp4", "mkv"].contains(URL(fileURLWithPath: recordPath).pathExtension.lowercased()) else { throw InputError.invalid("Choose an MP4 or MKV recording file.") }
             args.append("--record=\(recordPath)")
         }
-        args += try splitArguments(extra)
+        var additional = try splitArguments(extra)
+        if desktopSettings.enabled {
+            guard !additional.contains(where: { $0 == "--display-id" || $0.hasPrefix("--display-id=") }) else {
+                throw InputError.invalid("Remove --display-id from Additional arguments before enabling Desktop mode / virtual display.")
+            }
+            let dimensions = desktopSettings.resolution.split(separator: "x", omittingEmptySubsequences: false).compactMap { Int($0) }
+            guard dimensions.count == 2, dimensions.allSatisfy({ (1...8192).contains($0) }),
+                  let dpi = Int(desktopSettings.dpi), (72...640).contains(dpi) else {
+                throw InputError.invalid("Choose a valid virtual display resolution and density.")
+            }
+            additional.removeAll { $0 == "--new-display" || $0.hasPrefix("--new-display=") }
+            args.append(desktopSettings.argument)
+        }
+        args += additional
         return args
     }
 }

@@ -12,6 +12,32 @@ import Foundation
         let injection = try splitArguments("--window-title='$(touch /tmp/never)' ';' '`whoami`'")
         check(injection == ["--window-title=$(touch /tmp/never)", ";", "`whoami`"], "shell syntax stays literal")
         do { _ = try splitArguments("'open"); preconditionFailure("unterminated quote accepted") } catch { checks += 1 }
+        let services = WirelessService.parse("List of discovered mdns services\nadb-SERIAL-random _adb-tls-connect._tcp 192.168.1.4:43787\nadb-SERIAL-other _adb-tls-pairing._tcp. [fe80::1%en0]:37123\nbad _http._tcp 192.168.1.4:80\nbad _adb-tls-connect._tcp host:70000\n")
+        check(services.count == 2, "parse only valid Android services")
+        check(services[0].kind == .connection && services[0].endpoint == "192.168.1.4:43787", "connection endpoint")
+        check(services[1].kind == .pairing && services[1].endpoint == "[fe80::1%en0]:37123", "pairing IPv6 endpoint")
+        check(services[0].deviceKey == services[1].deviceKey, "associate pairing with connection despite random suffix")
+        check(services[0].id != services[1].id, "keep pairing and connection distinct")
+        var displayOptions = Options()
+        displayOptions.codec = "h265"; displayOptions.bitrate = "30"
+        let oldSettings = try JSONEncoder().encode(displayOptions)
+        let migrated = try JSONDecoder().decode(Options.self, from: oldSettings)
+        check(!migrated.desktopSettings.enabled && migrated.codec == "h265" && migrated.bitrate == "30", "legacy settings preserved")
+        displayOptions.extra = "--new-display=1920x1080/160 --print-fps --window-title='A desktop with spaces'"
+        displayOptions.setDesktopEnabled(true)
+        let desktopArgs = try displayOptions.arguments(serial: "x")
+        check(desktopArgs.filter { $0.hasPrefix("--new-display") } == ["--new-display=1920x1080/160"], "single desktop argument after migration")
+        check(desktopArgs.contains("--print-fps") && desktopArgs.contains("--window-title=A desktop with spaces"), "preserve unrelated advanced options")
+        displayOptions.desktopSettings.resolution = "2560x1440"; displayOptions.desktopSettings.dpi = "240"
+        let savedDesktop = try JSONDecoder().decode(Options.self, from: JSONEncoder().encode(displayOptions))
+        check(tryOptions(savedDesktop).contains("--new-display=2560x1440/240"), "desktop configuration persists")
+        displayOptions.setDesktopEnabled(false)
+        check(!tryOptions(displayOptions).contains(where: { $0.hasPrefix("--new-display") }), "toggle off returns to phone display")
+        check(displayOptions.desktopSettings.resolution == "2560x1440", "remember desktop settings while off")
+        displayOptions.setDesktopEnabled(true); displayOptions.extra = "--display-id=2"
+        do { _ = try displayOptions.arguments(serial: "x"); preconditionFailure("conflicting display accepted") } catch { checks += 1 }
+        displayOptions.extra = ""; displayOptions.desktopSettings.dpi = "0"
+        do { _ = try displayOptions.arguments(serial: "x"); preconditionFailure("invalid desktop density accepted") } catch { checks += 1 }
         var options = Options()
         var args = try options.arguments(serial: "test phone")
         check(args.contains("--serial=test phone"), "serial stays one argument")

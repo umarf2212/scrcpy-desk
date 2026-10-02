@@ -1,4 +1,4 @@
-# Scrcpy Desk 1.1
+# Scrcpy Desk 1.3.1
 
 A lightweight native macOS control panel for scrcpy. Universal app for Apple Silicon and Intel, macOS 13 Ventura or later. scrcpy 4.1 and ADB are included; no Homebrew, Java runtime, Electron, or Terminal setup is needed.
 
@@ -9,7 +9,7 @@ A lightweight native macOS control panel for scrcpy. Universal app for Apple Sil
 3. On Android, enable Developer options (usually tap Build number seven times), then USB debugging. Connect a data-capable USB cable, unlock the phone, and accept its debugging authorization prompt.
 4. Select your device, choose a preset, and click **Start Mirroring**. scrcpy opens a separate mirroring window. Use **Stop Mirroring** or close that window to finish.
 
-For Wi-Fi, choose **Connect over Wi-Fi**. On Android 11+, use the pairing-code dialog's IP and port to pair once, then the main Wireless debugging screen's IP and port to connect. These ports differ. A device previously configured for TCP/IP can also be connected by its IP:port.
+For Wi-Fi, enable **Wireless debugging** and choose **Connect over Wi-Fi**. Nearby Android devices appear automatically through Bonjour and ADB mDNS. Paired phones connect automatically. For a new phone, tap **Pair device with pairing code**, choose **Use for pairing** beside its advertised service, and enter the six-digit code. The app then connects using the separate connection service. Manual IP:port entry is available for networks that block multicast discovery.
 
 ## Features
 
@@ -41,7 +41,11 @@ These updates apply to the scrcpy engine, not the native Scrcpy Desk frontend. W
 
 ## Privacy & storage
 
-No analytics. The updater contacts GitHub’s official release API and release asset servers. Device discovery uses local ADB. Wi-Fi pairing connects only to the endpoint entered. Settings are stored in macOS UserDefaults under `local.scrcpydesk.app`; recordings are saved where you choose. Logs are held in memory (bounded to approximately 120 KB) unless exported. Logs can contain device identifiers, network addresses, and paths; review them before sharing. ADB stores its standard authorization keys in `~/.android`.
+No analytics. The updater contacts GitHub’s official release API and release asset servers. Device discovery uses local ADB and Bonjour for Android wireless debugging services. Connection attempts target discovered debugging endpoints; pairing requires a code entered by you. Settings are stored in macOS UserDefaults under `local.scrcpydesk.app`; recordings are saved where you choose. Logs are held in memory (bounded to approximately 120 KB) unless exported. Logs can contain device identifiers, network addresses, and paths; review them before sharing. ADB stores its standard authorization keys in `~/.android`.
+
+## Desktop mode / virtual display
+
+In **Mirror → Display**, enable **Desktop mode / virtual display** to open a separate desktop. Defaults are 1920 × 1080 at 160 dpi. Resolution and density can be selected there; the phone’s firmware determines which desktop interface opens. The desktop closes with the session. Disabling the toggle returns to the phone screen. Enabling it moves any existing `--new-display` option out of Additional arguments so the toggle controls the display consistently. Existing saved options are preserved.
 
 ## Build from source
 
@@ -56,7 +60,7 @@ The build script downloads the official scrcpy 4.1 archives, verifies pinned SHA
 Run command-building/parser checks with:
 
 ```
-swiftc Core.swift Tests.swift -o /tmp/scrcpydesk-tests
+swiftc Core.swift Wireless.swift Tests.swift -o /tmp/scrcpydesk-tests
 /tmp/scrcpydesk-tests
 ```
 

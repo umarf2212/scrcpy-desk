@@ -1,6 +1,15 @@
 #!/bin/sh
 case "$1" in
- devices) printf 'List of devices attached\nTEST_SERIAL device model:Test_Phone\nLOCKED unauthorized\n';;
- connect) printf 'connected to %s\n' "$2";;
+ devices)
+  printf 'List of devices attached\nTEST_SERIAL device model:Test_Phone\nLOCKED unauthorized\n'
+  if [ -f "$0.connected" ]; then printf '192.168.1.4:43787 device model:Samsung_S23_Ultra\n'; fi;;
+ mdns) printf 'List of discovered mdns services\nadb-SERIAL-connect _adb-tls-connect._tcp 192.168.1.4:43787\nadb-SERIAL-pairing _adb-tls-pairing._tcp 192.168.1.4:37123\n';;
+ pair)
+  if [ "$2" = "192.168.1.4:37123" ] && [ "$3" = "123456" ]; then touch "$0.paired"; printf 'Successfully paired to %s\n' "$2"; else printf 'Failed: wrong pairing endpoint or code\n'; exit 1; fi;;
+ connect)
+  printf '%s\n' "$2" >> "$0.connections"
+  if [ "$2" = "192.168.1.4:43787" ] && [ ! -f "$0.paired" ]; then printf 'failed to authenticate to %s\n' "$2"; exit 1; fi
+  if [ "$2" = "192.168.1.4:43787" ]; then touch "$0.connected"; fi
+  printf 'connected to %s\n' "$2";;
  *) printf 'Unexpected operation\n'; exit 1;;
 esac
