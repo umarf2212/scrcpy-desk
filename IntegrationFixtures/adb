@@ -1,13 +1,22 @@
 #!/bin/sh
 case "$1" in
+ -L)
+  [ "$3" = "server" ] && [ "$4" = "nodaemon" ] || exit 1
+  exec /usr/bin/python3 "$(dirname "$0")/adb-server.py" "$2" "$0";;
  devices)
-  printf 'List of devices attached\nTEST_SERIAL device model:Test_Phone\nLOCKED unauthorized\n'
-  if [ -f "$0.connected" ]; then printf '192.168.1.4:43787 device model:Samsung_S23_Ultra\n'; fi;;
+  printf 'List of devices attached\n'
+  if [ -z "$ADB_SERVER_SOCKET" ]; then
+   printf 'TEST_SERIAL device model:Test_Phone\nLOCKED unauthorized\n'
+  elif [ -f "$0.connected" ]; then
+   printf '192.168.1.4:43787 device model:Samsung_S23_Ultra\n'
+  fi;;
  mdns) printf 'List of discovered mdns services\nadb-SERIAL-connect _adb-tls-connect._tcp 192.168.1.4:43787\nadb-SERIAL-pairing _adb-tls-pairing._tcp 192.168.1.4:37123\n';;
  pair)
   if [ "$2" = "192.168.1.4:37123" ] && [ "$3" = "123456" ]; then touch "$0.paired"; printf 'Successfully paired to %s\n' "$2"; else printf 'Failed: wrong pairing endpoint or code\n'; exit 1; fi;;
  connect)
   printf '%s\n' "$2" >> "$0.connections"
+  if [ -z "$ADB_SERVER_SOCKET" ]; then printf "failed to connect to '%s': No route to host\n" "$2"; exit 1; fi
+  printf 'SERVER_SOCKET:%s\n' "$ADB_SERVER_SOCKET"
   if [ "$2" = "192.168.1.4:43787" ] && [ ! -f "$0.paired" ]; then printf 'failed to authenticate to %s\n' "$2"; exit 1; fi
   if [ "$2" = "192.168.1.4:43787" ]; then touch "$0.connected"; fi
   printf 'connected to %s\n' "$2";;

@@ -86,3 +86,89 @@ final class WirelessDiscovery: NSObject, NetServiceBrowserDelegate, NetServiceDe
     }
     deinit { stop() }
 }
+
+// Keep network operations in a child of the GUI app. A shared, detached ADB
+// daemon can retain a different macOS local-network permission identity.
+// The private Unix socket also keeps this server separate from other ADB tools.
+final class WirelessADBServer {
+    let directory: URL
+    var socket: String { "localfilesystem:" + directory.appendingPathComponent("adb.sock").path }
+    private let lock = NSLock()
+    private var process: Process?
+    private var output: FileHandle?
+    private var executable: URL?
+    private var closed = false
+
+    init() {
+        directory = URL(fileURLWithPath: "/tmp").appendingPathComponent("scrcpy-wifi-\(getuid())-\(UUID().uuidString)")
+    }
+
+    func start(executable: URL, environment: [String: String]) throws {
+        lock.lock(); defer { lock.unlock() }
+        guard !closed else { throw InputError.invalid("The Wi-Fi connection service is shutting down.") }
+        if process?.isRunning == true, self.executable == executable { return }
+        stopProcess()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        let log = directory.appendingPathComponent("server.log")
+        FileManager.default.createFile(atPath: log.path, contents: nil)
+        output = try FileHandle(forWritingTo: log)
+        let child = Process()
+        child.executableURL = executable
+        child.arguments = ["-L", socket, "server", "nodaemon"]
+        var env = environment
+        env["ADB_SERVER_SOCKET"] = socket
+        env["ADB_USB"] = "0"
+        env["ADB_EMU"] = "0"
+        env["ADB_MDNS_AUTO_CONNECT"] = "0"
+        env.removeValue(forKey: "ADB_TRACE")
+        child.environment = env
+        child.standardInput = FileHandle.nullDevice
+        child.standardOutput = output
+        child.standardError = output
+        process = child; self.executable = executable
+        do {
+            try child.run()
+            let deadline = Date().addingTimeInterval(5)
+            let path = directory.appendingPathComponent("adb.sock").path
+            while child.isRunning && !FileManager.default.fileExists(atPath: path) && Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+            guard child.isRunning, FileManager.default.fileExists(atPath: path) else {
+                let detail = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
+                throw InputError.invalid("Could not start the Wi-Fi connection service. " + String(detail.suffix(2000)))
+            }
+        } catch {
+            stopProcess()
+            throw error
+        }
+    }
+
+    func stop() {
+        lock.lock(); defer { lock.unlock() }
+        closed = true
+        stopProcess()
+    }
+
+    private func stopProcess() {
+        if let child = process, child.isRunning {
+            child.terminate()
+            let deadline = Date().addingTimeInterval(1)
+            while child.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+            if child.isRunning { kill(child.processIdentifier, SIGKILL) }
+            child.waitUntilExit()
+        }
+        process = nil; executable = nil
+        try? output?.close(); output = nil
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    deinit { stop() }
+}
+
+func wirelessFailureMessage(_ output: String) -> String {
+    let text = output.trimmingCharacters(in: .whitespacesAndNewlines)
+    if text.lowercased().contains("no route to host") || text.lowercased().contains("network is unreachable") {
+        return "Cannot reach the phone. Allow this app in System Settings → Privacy & Security → Local Network, keep both devices on the same Wi-Fi, then retry. If the phone’s address changed, refresh the nearby devices.\n\n" + text
+    }
+    return text
+}

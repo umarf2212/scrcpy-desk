@@ -9,7 +9,7 @@ A lightweight native macOS control panel for scrcpy. Universal app for Apple Sil
 3. On Android, enable Developer options (usually tap Build number seven times), then USB debugging. Connect a data-capable USB cable, unlock the phone, and accept its debugging authorization prompt.
 4. Select your device, choose a preset, and click **Start Mirroring**. scrcpy opens a separate mirroring window. Use **Stop Mirroring** or close that window to finish.
 
-For Wi-Fi, enable **Wireless debugging** and choose **Connect over Wi-Fi**. Nearby Android devices appear automatically through Bonjour and ADB mDNS. Paired phones connect automatically. For a new phone, tap **Pair device with pairing code**, choose **Use for pairing** beside its advertised service, and enter the six-digit code. The app then connects using the separate connection service. Manual IP:port entry is available for networks that block multicast discovery.
+For Wi-Fi, enable **Wireless debugging** and choose **Connect over Wi-Fi**. Nearby Android devices appear automatically through Bonjour and ADB mDNS. Paired phones connect automatically. For a new phone, tap **Pair device with pairing code**, choose **Use for pairing** beside its advertised service, and enter the six-digit code. The app then connects using the separate connection service. Manual IP:port entry is available for networks that block multicast discovery. If a connection reports “No route to host”, check **System Settings → Privacy & Security → Local Network** for this app, verify both devices are on the same Wi-Fi, then refresh and retry.
 
 ## Features
 
@@ -29,6 +29,8 @@ Audio needs Android 11+; app playback capture needs Android 13+. Device encoders
 
 Stop a recording normally to let it finalize. If an unresponsive session must be forcibly terminated, its file may be incomplete. Closing the control panel quits the app and stops its mirror session. The app does not kill the shared ADB server, which other Android tools may use.
 
+Wi-Fi discovery, pairing, connections, and wireless mirror sessions use a foreground ADB child owned by Scrcpy Desk. It listens on a private local Unix socket and does not claim USB devices. This prevents reuse of a detached daemon with a different macOS local-network permission identity. USB uses the shared ADB server; device lists are combined. The private Wi-Fi server is stopped and its temporary socket/log directory removed when the app quits. Standard ADB authorization keys are reused, so an already paired phone does not need to be paired again.
+
 ## scrcpy updates
 
 Open **Updates → Check & Update**, or **Scrcpy Desk → Check for scrcpy Updates…**. A newer stable release is downloaded and installed automatically after the check. The daily automatic check is on by default and can be disabled in Updates; it runs only while the app is open and idle. No mirror session is interrupted. Failed checks are shown in Updates and Activity and can be retried manually.
@@ -41,7 +43,7 @@ These updates apply to the scrcpy engine, not the native Scrcpy Desk frontend. W
 
 ## Privacy & storage
 
-No analytics. The updater contacts GitHub’s official release API and release asset servers. Device discovery uses local ADB and Bonjour for Android wireless debugging services. Connection attempts target discovered debugging endpoints; pairing requires a code entered by you. Settings are stored in macOS UserDefaults under `local.scrcpydesk.app`; recordings are saved where you choose. Logs are held in memory (bounded to approximately 120 KB) unless exported. Logs can contain device identifiers, network addresses, and paths; review them before sharing. ADB stores its standard authorization keys in `~/.android`.
+No analytics. The updater contacts GitHub’s official release API and release asset servers. Device discovery uses local ADB and Bonjour for Android wireless debugging services. Connection attempts target discovered debugging endpoints; pairing requires a code entered by you. Settings are stored in macOS UserDefaults under `local.scrcpydesk.app`; recordings are saved where you choose. Session logs are held in memory (bounded to approximately 120 KB) unless exported. The private ADB server’s diagnostic log is stored in its temporary directory and removed on normal app exit. Logs can contain device identifiers, network addresses, and paths; review them before sharing. ADB stores its standard authorization keys in `~/.android`.
 
 ## Desktop mode / virtual display
 

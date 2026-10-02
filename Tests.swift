@@ -18,6 +18,8 @@ import Foundation
         check(services[1].kind == .pairing && services[1].endpoint == "[fe80::1%en0]:37123", "pairing IPv6 endpoint")
         check(services[0].deviceKey == services[1].deviceKey, "associate pairing with connection despite random suffix")
         check(services[0].id != services[1].id, "keep pairing and connection distinct")
+        check(wirelessFailureMessage("failed to connect: No route to host").contains("Local Network"), "actionable local-network recovery")
+        check(wirelessFailureMessage("failed to authenticate").contains("Local Network") == false, "authentication is not a routing failure")
         var displayOptions = Options()
         displayOptions.codec = "h265"; displayOptions.bitrate = "30"
         let oldSettings = try JSONEncoder().encode(displayOptions)

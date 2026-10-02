@@ -18,6 +18,8 @@ final class DeskModel: ObservableObject {
     @Published var wirelessScanning = false
     @Published var wirelessStatus = "Looking for wireless debugging devices…"
     private let discovery = WirelessDiscovery()
+    private let wirelessADB = WirelessADBServer()
+    private var wirelessDeviceIDs = Set<String>()
     private var bonjourServices: [WirelessService] = []
     private var adbServices: [WirelessService] = []
     private var attemptedWireless = Set<String>()
@@ -52,6 +54,9 @@ final class DeskModel: ObservableObject {
         env["SCRCPY_ICON_DIR"] = root.path
         env["PATH"] = root.path + ":/usr/bin:/bin:/usr/sbin:/sbin"
         env.removeValue(forKey: "ANDROID_SERIAL")
+        env.removeValue(forKey: "ADB_SERVER_SOCKET")
+        env.removeValue(forKey: "ANDROID_ADB_SERVER_ADDRESS")
+        env.removeValue(forKey: "ANDROID_ADB_SERVER_PORT")
         return env
     }
     init(engineStore: EngineStore = EngineStore()) {
@@ -80,7 +85,7 @@ final class DeskModel: ObservableObject {
     func scanWireless() {
         guard !wirelessScanning, !busy, !updating else { return }
         wirelessScanning = true
-        adb(["mdns", "services"], timeout: 8) { [weak self] code, text in
+        adb(["mdns", "services"], wireless: true, timeout: 8) { [weak self] code, text in
             guard let self else { return }
             self.wirelessScanning = false
             self.adbServices = code == 0 ? WirelessService.parse(text) : []
@@ -165,14 +170,18 @@ final class DeskModel: ObservableObject {
         if logs.count > 120_000 { logs = String(logs.suffix(100_000)) }
     }
     // A bounded worker captures output without blocking the UI or filling a pipe.
-    func adb(_ arguments: [String], timeout: Double = 15, completion: @escaping (Int32, String) -> Void) {
-        let executable = root.appendingPathComponent("adb"), env = environment
+    func adb(_ arguments: [String], wireless: Bool = false, timeout: Double = 15, completion: @escaping (Int32, String) -> Void) {
+        let executable = root.appendingPathComponent("adb"), server = wirelessADB
+        var env = environment
+        if wireless { env["ADB_SERVER_SOCKET"] = server.socket }
+        let clientEnvironment = env
         adbQueue.async {
             let process = Process(), pipe = Pipe()
-            process.executableURL = executable; process.arguments = arguments; process.environment = env
+            process.executableURL = executable; process.arguments = arguments; process.environment = clientEnvironment
             process.standardOutput = pipe; process.standardError = pipe
             process.standardInput = FileHandle.nullDevice
             do {
+                if wireless { try server.start(executable: executable, environment: clientEnvironment) }
                 try process.run()
                 let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
                 let hardStop = DispatchWorkItem { if process.isRunning { kill(process.processIdentifier, SIGKILL) } }
@@ -191,20 +200,31 @@ final class DeskModel: ObservableObject {
     func refresh() {
         guard !scanning, !busy, !updating else { return }
         scanning = true
-        adb(["devices", "-l"]) { [weak self] code, text in
-            guard let self else { return }; self.scanning = false
-            if code == 0 {
-                self.devices = Device.parse(text)
-                if !self.devices.contains(where: { $0.id == self.selected }) { self.selected = self.devices.first(where: \.ready)?.id ?? self.devices.first?.id ?? "" }
+        // USB remains on the shared server; Wi-Fi belongs to this app's child.
+        adb(["devices", "-l"]) { [weak self] usbCode, usbText in
+            guard let self else { return }
+            self.adb(["devices", "-l"], wireless: true) { [weak self] wifiCode, wifiText in
+                guard let self else { return }; self.scanning = false
+                let usb = usbCode == 0 ? Device.parse(usbText) : []
+                let wifi = wifiCode == 0 ? Device.parse(wifiText) : []
+                self.wirelessDeviceIDs = Set(wifi.map(\.id))
+                var merged = Dictionary(usb.map { ($0.id, $0) }, uniquingKeysWith: { _, newer in newer })
+                for device in wifi { merged[device.id] = device }
+                self.devices = merged.values.sorted { $0.id < $1.id }
+                if !self.devices.contains(where: { $0.id == self.selected }) {
+                    self.selected = self.devices.first(where: \.ready)?.id ?? self.devices.first?.id ?? ""
+                }
                 self.autoConnectWireless()
-                if !self.running { self.status = self.devices.isEmpty ? "Connect your Android to get started" : "\(self.devices.filter(\.ready).count) device(s) ready" }
-            } else {
-                self.devices = []; self.selected = ""
-                if !self.running { self.status = "Device scan failed — see Activity" }
-                if !self.logs.hasSuffix(text) { self.append(text) }
+                if !self.running {
+                    self.status = self.devices.isEmpty ? "Connect a device to start" : "\(self.devices.filter(\.ready).count) device(s) ready"
+                }
+                if usbCode != 0 { self.append(usbText) }
+                if wifiCode != 0 { self.append(wifiText) }
+                if usbCode != 0 && wifiCode != 0 && !self.running { self.status = "Device scan failed — see Activity" }
             }
         }
     }
+    func shutdown() { wirelessADB.stop() }
     func connect(_ endpoint: String, pairCode: String? = nil, automatic: Bool = false) {
         guard !busy, !updating, !running else { return }
         do {
@@ -216,11 +236,11 @@ final class DeskModel: ObservableObject {
             }
             busy = true
             append(pairCode == nil ? "\nConnecting to \(address)…\n" : "\nPairing with \(address)…\n")
-            adb(args, timeout: 30) { [weak self] code, text in
+            adb(args, wireless: true, timeout: 30) { [weak self] code, text in
                 guard let self else { return }; self.busy = false; self.append(text)
                 if code != 0 || text.lowercased().contains("failed") || text.lowercased().contains("cannot") || text.lowercased().contains("unable") {
-                    if pairCode == nil { self.wirelessFailures[address] = text.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    if !automatic { self.error = text }
+                    if pairCode == nil { self.wirelessFailures[address] = wirelessFailureMessage(text) }
+                    if !automatic { self.error = wirelessFailureMessage(text) }
                 } else if pairCode != nil {
                     self.status = "Paired. Connecting automatically…"
                     let paired = self.wirelessServices.first { $0.kind == .pairing && $0.endpoint == address }
@@ -260,7 +280,10 @@ final class DeskModel: ObservableObject {
                 }
             }
             let process = Process(), pipe = Pipe()
-            process.executableURL = root.appendingPathComponent("scrcpy"); process.arguments = args; process.environment = environment
+            process.executableURL = root.appendingPathComponent("scrcpy"); process.arguments = args
+            var sessionEnvironment = environment
+            if wirelessDeviceIDs.contains(selected) { sessionEnvironment["ADB_SERVER_SOCKET"] = wirelessADB.socket }
+            process.environment = sessionEnvironment
             process.standardOutput = pipe; process.standardError = pipe; process.standardInput = FileHandle.nullDevice
             append("\n▶ " + command + "\n")
             try process.run()
@@ -313,5 +336,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return .terminateLater
     }
+    func applicationWillTerminate(_ notification: Notification) { model?.shutdown() }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }

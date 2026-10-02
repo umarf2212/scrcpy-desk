@@ -1,4 +1,5 @@
 #!/bin/sh
+printf 'SERVER_SOCKET:%s\n' "${ADB_SERVER_SOCKET:-shared}"
 trap 'echo Session-stopped; exit 0' INT TERM
 for arg in "$@"; do
  printf 'ARG:%s\n' "$arg"

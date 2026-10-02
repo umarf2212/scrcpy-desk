@@ -55,3 +55,12 @@ Renamed the option and related help/error/documentation text to Desktop mode / v
 - Native inspection covered Mirror, Audio, Control, Advanced, Activity, Updates, and the Wi-Fi sheet. Regular and near-minimum-width windows were checked (1220 and 843 points wide). Guidance wraps; the persistent session action stays visible; lower settings, command copy, and expanded manual Wi-Fi connection remain reachable by scrolling.
 - The existing bitrate of 30 Mbps and enabled 1920 × 1080 / 160 dpi virtual display were preserved. Toggling the virtual display off hides its controls and updates the session summary; turning it back on restores the values.
 - No phone was connected during the layout inspection. Live session behavior remains covered by the prior phone verification and process fixtures.
+
+## Wi-Fi daemon isolation fix — October 3, 2026
+
+- Reproduced “No route to host” from the detached shared ADB daemon while a direct TCP connection to the advertised phone port succeeded. The daemon came from an earlier app build.
+- Wi-Fi now uses an app-owned foreground ADB process with a private Unix socket. USB and emulator scanning are disabled in that process; USB stays on the shared server. Pairing, discovery, device refresh, and wireless scrcpy sessions consistently use the private transport.
+- 39 core checks passed. Process integration passed with a simulated shared-server routing failure, successful private-server connection/pairing, shared USB device preservation, separate USB/Wi-Fi scrcpy environments, one reused server, and private socket cleanup on shutdown. The fixture requires local IPC permission; the sandbox blocked its Unix socket, so the successful run used elevated execution.
+- Both launcher architectures compile, and the universal preview app signature verifies.
+- Live verification with the Samsung S23 Ultra: automatic Wi-Fi connection succeeded with existing pairing keys. A scrcpy session created the 1920 × 1080 / 160 dpi virtual display; server/device output and Metal texture rendering confirmed the working stream. Stopped the test session normally; the phone remains connected and ready.
+- Process inspection confirmed the Wi-Fi server is a child of the running preview app. The original shared ADB daemon remained running throughout.
