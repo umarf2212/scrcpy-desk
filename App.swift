@@ -308,7 +308,7 @@ struct DeskView: View {
                 hint("Checks while the app is open and idle. Downloads are verified before installation.")
             }
             settingsSection("Recovery", last: true) {
-                hint("Updates retain the previous engine. Bundled scrcpy 4.1 is always available for rollback.")
+                hint("Updates retain the previous engine. Bundled scrcpy \(EngineStore.bundledVersion) is always available for rollback.")
                 if model.engineStore.isUpdated {
                     Button("Restore scrcpy \(model.engineStore.rollbackVersion)") { model.rollbackEngine() }
                         .disabled(model.updating || model.running || model.busy || model.scanning)

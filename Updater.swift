@@ -55,7 +55,7 @@ struct GitHubRelease: Decodable {
 struct EngineStore {
     struct Engine: Codable, Equatable { let folder: String; let version: String }
     struct Manifest: Codable { let current: Engine; let previous: Engine? }
-    static let bundledVersion = "4.1"
+    static let bundledVersion = "5.0"
     static var architecture: String {
         #if arch(arm64)
         return "arm64"
@@ -73,20 +73,27 @@ struct EngineStore {
     }
     var manifestURL: URL { base.appendingPathComponent("current.json") }
     var manifest: Manifest? {
-        guard let data = try? Data(contentsOf: manifestURL), let manifest = try? JSONDecoder().decode(Manifest.self, from: data), valid(manifest.current) else { return nil }
+        guard let data = try? Data(contentsOf: manifestURL), let manifest = try? JSONDecoder().decode(Manifest.self, from: data), usable(manifest.current) else { return nil }
         return manifest
     }
     func valid(_ engine: Engine) -> Bool {
         guard !engine.folder.isEmpty, !engine.folder.hasPrefix("."), engine.folder.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == ".") }), (try? ReleaseVersion(engine.version)) != nil else { return false }
         return ["scrcpy", "adb", "scrcpy-server"].allSatisfy { FileManager.default.fileExists(atPath: base.appendingPathComponent(engine.folder).appendingPathComponent($0).path) }
     }
+    // A frontend upgrade must not keep using an older downloaded engine instead
+    // of the newer bundled one. Retain the files, but treat the bundle as a floor.
+    func usable(_ engine: Engine) -> Bool {
+        guard valid(engine), let version = try? ReleaseVersion(engine.version),
+              let bundled = try? ReleaseVersion(Self.bundledVersion) else { return false }
+        return version >= bundled
+    }
     var root: URL { manifest.map { base.appendingPathComponent($0.current.folder) } ?? bundledRoot }
     var version: String { manifest?.current.version ?? Self.bundledVersion }
-    var rollbackVersion: String { manifest?.previous.flatMap { valid($0) ? $0.version : nil } ?? Self.bundledVersion }
+    var rollbackVersion: String { manifest?.previous.flatMap { usable($0) ? $0.version : nil } ?? Self.bundledVersion }
     var isUpdated: Bool { manifest != nil }
     func rollback() throws {
         guard let current = manifest else { return }
-        if let previous = current.previous, valid(previous) {
+        if let previous = current.previous, usable(previous) {
             try JSONEncoder().encode(Manifest(current: previous, previous: nil)).write(to: manifestURL, options: .atomic)
         } else { try FileManager.default.removeItem(at: manifestURL) }
     }
@@ -170,7 +177,8 @@ final class EngineUpdater {
     func latest() async throws -> GitHubRelease {
         var request = URLRequest(url: Self.latestURL, cachePolicy: .reloadIgnoringLocalCacheData)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("ScrcpyDesk/1.1", forHTTPHeaderField: "User-Agent")
+        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.3.2"
+        request.setValue("ScrcpyDesk/\(appVersion)", forHTTPHeaderField: "User-Agent")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         let (data, response) = try await session.data(for: request)
         try Self.check(response)

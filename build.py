@@ -2,27 +2,34 @@
 """Build a self-contained, ad-hoc signed Universal macOS app and DMG. macOS + Swift CLT required."""
 import hashlib, pathlib, plistlib, shutil, subprocess, sys, tarfile, urllib.request
 SOURCE = pathlib.Path(__file__).resolve().parent
+APP_VERSION = '1.3.2'
+BUILD_VERSION = '6'
+ENGINE_VERSION = '5.0'
 OUT = pathlib.Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else SOURCE.parent
 WORK = pathlib.Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else SOURCE / 'build'
 OUT.mkdir(parents=True, exist_ok=True); WORK.mkdir(parents=True, exist_ok=True)
 def run(*args): subprocess.run([str(a) for a in args], check=True)
 releases = {
- 'arm64': ('aarch64', '20fd47c9014dd5e0fa77091f3cb7adbda8445a360c4584aeaa0150b5b3988ff3'),
- 'x86_64': ('x86_64', 'ee2a7223bc8dbdc4f482db1134bcf441178dafb833492b71ca4c22090c58ce72')}
+ 'arm64': ('aarch64', '7cb4e41c859b05b36e89dc9be6c353cc5980c00d7f7f6a763b5b355551b82e9c'),
+ 'x86_64': ('x86_64', 'dacb995c8eb42528cb96b2da2a2e3110fe5c82281378e6044fc7cccf48a7c39a')}
 app = OUT / 'Scrcpy Desk.app'
 if app.exists(): shutil.rmtree(app)
 macos = app / 'Contents/MacOS'; resources = app / 'Contents/Resources'
 macos.mkdir(parents=True); resources.mkdir()
 for arch, (upstream, checksum) in releases.items():
-    archive = WORK / f'vendor/{arch}.tar.gz'; archive.parent.mkdir(parents=True, exist_ok=True)
-    if not archive.exists(): urllib.request.urlretrieve(f'https://github.com/Genymobile/scrcpy/releases/download/v4.1/scrcpy-macos-{upstream}-v4.1.tar.gz', archive)
-    assert hashlib.sha256(archive.read_bytes()).hexdigest() == checksum, 'Upstream checksum mismatch'
+    archive_name = f'scrcpy-macos-{upstream}-v{ENGINE_VERSION}.tar.gz'
+    archive = WORK / f'vendor/{ENGINE_VERSION}/{archive_name}'; archive.parent.mkdir(parents=True, exist_ok=True)
+    if not archive.exists(): urllib.request.urlretrieve(f'https://github.com/Genymobile/scrcpy/releases/download/v{ENGINE_VERSION}/{archive_name}', archive)
+    if hashlib.sha256(archive.read_bytes()).hexdigest() != checksum:
+        raise ValueError(f'Upstream checksum mismatch: {archive_name}')
     dest = resources / f'Engine/{arch}'; dest.mkdir(parents=True)
     with tarfile.open(archive) as tar:
         for member in tar.getmembers():
             name = pathlib.PurePosixPath(member.name).name
             if name in ['scrcpy', 'scrcpy-server', 'adb', 'LICENSE', 'scrcpy.png', 'disconnected.png', 'scrcpy.1'] and member.isfile():
                 (dest / name).write_bytes(tar.extractfile(member).read())
+    for name in ['scrcpy', 'scrcpy-server', 'adb', 'LICENSE', 'scrcpy.png', 'disconnected.png', 'scrcpy.1']:
+        if not (dest / name).is_file(): raise ValueError(f'Upstream archive is missing {name}')
     for exe in ['scrcpy', 'adb']:
         (dest / exe).chmod(0o755)
         if exe == 'adb':
@@ -39,7 +46,7 @@ for size in [16, 32, 128, 256, 512]:
         target = iconset / f'icon_{size}x{size}{"@2x" if scale == 2 else ""}.png'
         run('sips', '-z', size * scale, size * scale, WORK / 'icon.png', '--out', target)
 run('iconutil', '-c', 'icns', iconset, '-o', resources / 'AppIcon.icns')
-info = {'CFBundleName': 'Scrcpy Desk', 'CFBundleDisplayName': 'Scrcpy Desk', 'CFBundleIdentifier': 'local.scrcpydesk.app', 'CFBundleVersion': '5', 'CFBundleShortVersionString': '1.3.1', 'CFBundleExecutable': 'ScrcpyDesk', 'CFBundlePackageType': 'APPL', 'CFBundleIconFile': 'AppIcon', 'LSMinimumSystemVersion': '13.0', 'NSHighResolutionCapable': True, 'NSPrincipalClass': 'NSApplication', 'NSLocalNetworkUsageDescription': 'Discover and connect to Android devices with wireless debugging on your local network.', 'NSBonjourServices': ['_adb-tls-pairing._tcp', '_adb-tls-connect._tcp']}
+info = {'CFBundleName': 'Scrcpy Desk', 'CFBundleDisplayName': 'Scrcpy Desk', 'CFBundleIdentifier': 'local.scrcpydesk.app', 'CFBundleVersion': BUILD_VERSION, 'CFBundleShortVersionString': APP_VERSION, 'CFBundleExecutable': 'ScrcpyDesk', 'CFBundlePackageType': 'APPL', 'CFBundleIconFile': 'AppIcon', 'LSMinimumSystemVersion': '13.0', 'NSHighResolutionCapable': True, 'NSPrincipalClass': 'NSApplication', 'NSLocalNetworkUsageDescription': 'Discover and connect to Android devices with wireless debugging on your local network.', 'NSBonjourServices': ['_adb-tls-pairing._tcp', '_adb-tls-connect._tcp']}
 (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(info))
 helptext = subprocess.check_output([str(resources / 'Engine/arm64/scrcpy'), '--help']) if subprocess.check_output(['uname', '-m']).strip() == b'arm64' else subprocess.check_output([str(resources / 'Engine/x86_64/scrcpy'), '--help'])
 (resources / 'scrcpy-help.txt').write_bytes(helptext)
@@ -50,7 +57,7 @@ stage = WORK / 'dmg-stage'
 if stage.exists(): shutil.rmtree(stage)
 stage.mkdir(); shutil.copytree(app, stage / app.name); (stage / 'Applications').symlink_to('/Applications')
 shutil.copy2(SOURCE / 'README.md', stage / 'Read Me.md')
-dmg = OUT / 'Scrcpy-Desk-1.3.1-Universal.dmg'
+dmg = OUT / f'Scrcpy-Desk-{APP_VERSION}-Universal.dmg'
 if dmg.exists(): dmg.unlink()
 run('hdiutil', 'create', '-volname', 'Scrcpy Desk', '-srcfolder', stage, '-ov', '-format', 'UDZO', dmg)
 print(f'Built {app}\nBuilt {dmg}')

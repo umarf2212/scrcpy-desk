@@ -1,5 +1,25 @@
 # Verification
 
+## scrcpy 5.0 in 1.3.2 — October 8, 2026
+
+- Official Apple Silicon and Intel scrcpy 5.0 archives match the pinned GitHub SHA-256 digests and upstream SHA256SUMS.txt. Both archives include the matching Android server; its hash matches the separately published scrcpy-server-v5.0 asset.
+- Both launcher targets compile for macOS 13+. The launcher contains arm64 and x86_64 slices; each packaged scrcpy and ADB binary has the intended architecture. The engine binaries' minimum OS versions remain below macOS 13.
+- Bundled Apple Silicon scrcpy reports 5.0 and ADB reports 37.0.1-15733141. All 24 CLI flags used by the frontend are present in the 5.0 help, including virtual display support. The generated option reference includes --hwdec.
+- 39 core checks and 40 updater checks passed. Updater coverage includes a newer bundle superseding an older cached engine, preserving downloaded engines at or above the bundled version, and rollback skipping superseded engines. Real 5.0 archive installation, checksum/extraction failure handling, and the live GitHub API/download checksum check passed.
+- Process integration passed for discovery, session launch/stop, recording, virtual display arguments, Wi-Fi pairing and automatic connection, separate USB/Wi-Fi environments, and private-server cleanup. The fixture's Unix socket requires execution outside the sandbox.
+- Universal app signature verified with codesign --verify --deep --strict. Compressed DMG checksum verified with hdiutil; a read-only mount contains the signed app, working scrcpy 5.0, and the Applications shortcut. Apple's icon and disk-image tools required execution outside the sandbox.
+
+To repeat updater verification with the current engine:
+
+```
+gh api repos/Genymobile/scrcpy/releases/tags/v5.0 > /tmp/scrcpy-5.0-release.json
+gh release download v5.0 --repo Genymobile/scrcpy --pattern 'scrcpy-macos-aarch64-v5.0.tar.gz' --dir /tmp/scrcpy-5.0
+swiftc Core.swift Updater.swift UpdaterTests.swift -o /tmp/scrcpy-updater-tests
+/tmp/scrcpy-updater-tests /tmp/scrcpy-5.0-release.json /tmp/scrcpy-5.0/scrcpy-macos-aarch64-v5.0.tar.gz --live
+```
+
+Use the x86_64 archive on an Intel Mac. No live phone mirroring or Intel hardware execution was performed for this engine update. The app remains ad-hoc signed and is not Apple-notarized. Earlier verification results below describe prior releases.
+
 Verified on Apple Silicon running macOS 26:
 
 - Both arm64 and x86_64 launcher targets compile with a macOS 13 deployment target.

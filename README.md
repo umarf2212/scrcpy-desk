@@ -1,6 +1,8 @@
-# Scrcpy Desk 1.3.1
+# Scrcpy Desk 1.3.2
 
-A lightweight native macOS control panel for scrcpy. Universal app for Apple Silicon and Intel, macOS 13 Ventura or later. scrcpy 4.1 and ADB are included; no Homebrew, Java runtime, Electron, or Terminal setup is needed.
+A lightweight native macOS control panel for scrcpy. Universal app for Apple Silicon and Intel, macOS 13 Ventura or later. scrcpy 5.0 and ADB 37.0.1 are included; no Homebrew, Java runtime, Electron, or Terminal setup is needed.
+
+[Download the latest Universal DMG](https://github.com/umarf2212/scrcpy-desk/releases/latest). Version 1.3.2 bundles the official scrcpy 5.0 client and matching Android server for both architectures. Hardware decoding is enabled by default, with automatic software fallback. To force software decoding, add `--hwdec=disabled` in Advanced → Additional arguments.
 
 ## Install & start
 
@@ -37,7 +39,7 @@ Open **Updates → Check & Update**, or **Scrcpy Desk → Check for scrcpy Updat
 
 The updater compares version numbers numerically, selects this Mac’s architecture, requires the official GitHub asset URL and SHA-256 digest, verifies download size/hash, then checks that scrcpy and ADB run and that required CLI options remain available. Drafts, prereleases, unsupported Mac downloads, unverified assets and incompatible engines are rejected. It updates scrcpy, its matching server and bundled ADB together.
 
-The signed app bundle is never modified. Updates are stored under `~/Library/Application Support/Scrcpy Desk/Engines/<architecture>/`. A small atomic manifest selects the engine only after installation succeeds. The previous engine and the bundled 4.1 fallback remain available. **Restore scrcpy …** rolls back and disables automatic updates to keep the restored version selected. Updated help is shown by Full option reference. No admin password, Homebrew, developer tools or restart is needed.
+The signed app bundle is never modified. Updates are stored under `~/Library/Application Support/Scrcpy Desk/Engines/<architecture>/`. A small atomic manifest selects the engine only after installation succeeds. The previous compatible engine and the bundled 5.0 fallback remain available. **Restore scrcpy …** rolls back and disables automatic updates to keep the restored version selected. Installing a newer frontend uses its bundled engine when a previously downloaded engine is older; newer downloaded engines remain selected. Updated help is shown by Full option reference. No admin password, Homebrew, developer tools or restart is needed.
 
 These updates apply to the scrcpy engine, not the native Scrcpy Desk frontend. When copying the app to another Mac, the bundled engine travels with it; that Mac can independently fetch the newest engine. Moving the app on the same Mac preserves its downloaded engine.
 
@@ -57,7 +59,7 @@ Install Apple's Command Line Tools and Python 3, then run:
 python3 build.py /path/to/deliverables /path/to/build-work
 ```
 
-The build script downloads the official scrcpy 4.1 archives, verifies pinned SHA-256 checksums, compiles the native SwiftUI launcher for both architectures, creates the icon, ad-hoc signs the bundle and creates a compressed DMG. Internet access is required for the first build. No third-party Swift packages are used.
+The build script downloads the official scrcpy 5.0 archives, verifies pinned SHA-256 checksums, compiles the native SwiftUI launcher for both architectures, creates the icon, ad-hoc signs the bundle and creates a compressed DMG. Cached archives are separated by engine version. Internet access is required for the first build. No third-party Swift packages are used.
 
 Run command-building/parser checks with:
 
